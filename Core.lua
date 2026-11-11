@@ -51,7 +51,19 @@ end
 function ns.Safe(fn, ...)
     local ok, err = pcall(fn, ...)
     if not ok then
-        ns.lastError = tostring(err)
+        local msg = tostring(err)
+        local stack = debugstack and debugstack(2) or ""
+        local file, line = stack:match("([%w%._/\\%-]+%.lua):(%d+)")
+        if not file then
+            local info = debug and debug.getinfo and debug.getinfo(2, "Sl")
+            if info and info.short_src and info.currentline then
+                file, line = info.short_src, info.currentline
+            end
+        end
+        if file and line then
+            msg = file .. ":" .. tostring(line) .. ": " .. msg
+        end
+        ns.lastError = msg
         ns.errorCount = (ns.errorCount or 0) + 1
         if ns.errorCount == 1 then
             ns.Print("an error was caught and hidden. Type /cr errors to see it.")

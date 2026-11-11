@@ -232,7 +232,7 @@ local function PositionIcon(set, i)
     pcall(icon.cd.SetCountdownFont, icon.cd, GetAuraFont(set.timerPx))
 end
 
--- The happiness icon occupies the first slot of the pet's buff row.
+-- The happiness icon sits below the power bar, not above it.
 function ns.PositionHappy(b)
     local set = b.auraSets.buffs
     local h = b.happy
@@ -240,9 +240,9 @@ function ns.PositionHappy(b)
     h:SetSize(set.size, set.size)
     h:ClearAllPoints()
     if set.onLeft then
-        h:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", 0, 0)
+        h:SetPoint("TOPRIGHT", b.power, "BOTTOMRIGHT", 0, -3)
     else
-        h:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", 0, 0)
+        h:SetPoint("TOPLEFT", b.power, "BOTTOMLEFT", 0, -3)
     end
 end
 
@@ -494,7 +494,6 @@ local function TryAltAuraMethod(b)
                 return false
             end
             native._crReady = true
-            ns.Print("Alternative aura method initialized for " .. b.unit .. " " .. name .. ".")
         end
 
         if native and native._crReady then
