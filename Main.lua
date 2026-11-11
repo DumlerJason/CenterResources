@@ -136,11 +136,13 @@ SlashCmdList["CENTERRESOURCES"] = function(msg)
         ns.Print("all settings reset")
     elseif cmd == "pet" then
         for _, line in ipairs(ns.DescribeHappiness()) do ns.Print(line) end
+    elseif cmd == "auras" then
+        for _, line in ipairs(ns.DescribeAuraState()) do ns.Print(line) end
     elseif cmd == "layout" then
         ns.Print("current Edit Mode layout: " .. tostring(ns.layoutKey))
     elseif cmd == "errors" then
         ns.Print(ns.lastError and ("last error: " .. ns.lastError) or "no errors recorded")
     else
-        ns.Print("/cr = settings, /cr unlock, /cr lock, /cr reset, /cr layout, /cr pet, /cr errors")
+        ns.Print("/cr = settings, /cr unlock, /cr lock, /cr reset, /cr layout, /cr pet, /cr auras, /cr errors")
     end
 end

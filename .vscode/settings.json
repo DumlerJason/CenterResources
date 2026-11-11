@@ -23,7 +23,9 @@
         "UnregisterUnitWatch",
         "SetRaidTargetIconTexture",
         "FACTION_BAR_COLORS",
-        "RAID_CLASS_COLORS"
+        "RAID_CLASS_COLORS",
+        "GenerateClosure",
+        "AnchorUtil"
     ],
     "Lua.type.weakUnionCheck": true
 }

@@ -324,9 +324,242 @@ local function ApplyAuraIcon(icon, unit, entry, harmful)
     return true
 end
 
+local function MakeNativeAuraButton(button, harmful, set, block)
+    button:EnableMouse(true)
+    button._crUnit = block and block.unit or button._crUnit
+    button._crFilter = harmful and "HARMFUL" or "HELPFUL"
+
+    if button._crNativeReady then
+        return
+    end
+    button._crNativeReady = true
+
+    local size = button._crNativeSize or 16
+    button:SetSize(size, size)
+
+    local tex = button:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints()
+    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    button.Icon = tex
+    button.icon = tex
+    button:SetIcon(tex)
+
+    local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+    cd:SetAllPoints()
+    button.Cooldown = cd
+    button:SetDurationCooldown(cd)
+    if set then
+        cd:SetHideCountdownNumbers((set.timerPx or size) < 7.5)
+        if cd.SetCountdownFont then pcall(cd.SetCountdownFont, cd, GetAuraFont(set.timerPx or size)) end
+    end
+
+    local count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    count:SetPoint("BOTTOMRIGHT", -1, 1)
+    if set then
+        local font = count:GetFont() or GameFontNormalSmall:GetFont()
+        count:SetFont(font, set.countPx or 10, "OUTLINE")
+    end
+    button.Count = count
+    button:SetApplicationCount(count)
+
+    local border = button:CreateTexture(nil, "OVERLAY")
+    border:SetAllPoints()
+    border:SetColorTexture(0, 0, 0, 0)
+    button.Border = border
+
+    button:SetScript("OnEnter", function(self)
+        local unit = self._crUnit or (block and block.unit) or self.unit
+        local id = self.auraInstanceID or self._crAuraID
+        if not unit or not id then return end
+        ns.AnchorTooltip(block)
+        local filter = self._crFilter or (harmful and "HARMFUL" or "HELPFUL")
+        if filter == "HARMFUL" and GameTooltip.SetUnitDebuffByAuraInstanceID then
+            pcall(GameTooltip.SetUnitDebuffByAuraInstanceID, GameTooltip, unit, id, "HARMFUL")
+        elseif filter == "HELPFUL" and GameTooltip.SetUnitBuffByAuraInstanceID then
+            pcall(GameTooltip.SetUnitBuffByAuraInstanceID, GameTooltip, unit, id, "HELPFUL")
+        else
+            pcall(GameTooltip.SetUnit, GameTooltip, unit)
+        end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    button:SetScript("OnHide", function() GameTooltip:Hide() end)
+
+    if harmful then
+        button:SetDispelTypeTexture(border, {
+            showWhenHelpful = false,
+            showWhenHarmful = true,
+            style = Enum.CustomAuraButtonDispelTypeTextureStyle.Border,
+        })
+    else
+        button:SetDispelTypeTexture(border, {
+            showWhenHelpful = true,
+            showWhenHarmful = false,
+            style = Enum.CustomAuraButtonDispelTypeTextureStyle.Border,
+        })
+    end
+end
+
+local function TryAltAuraMethod(b)
+    local cfg = ns.Cfg(b.unit).auras
+    if not cfg.enabled or not cfg.altMethod then
+        if b.altAuras then
+            for _, native in pairs(b.altAuras) do
+                if native and native.Hide then pcall(native.Hide, native) end
+            end
+        end
+        return false
+    end
+
+    local unitID = UnitExists(b.unit) and (UnitGUID(b.unit) or UnitName(b.unit) or b.unit) or nil
+    if b.altAuras and b.altAuras._unitID ~= unitID then
+        for _, native in pairs(b.altAuras) do
+            if native and native.SetUnit then pcall(native.SetUnit, native, nil) end
+            if native and native.ClearAllAuras then pcall(native.ClearAllAuras, native) end
+            if native and native.Hide then pcall(native.Hide, native) end
+        end
+        b.altAuras = {}
+    end
+
+    if not b.altAuras then
+        b.altAuras = {}
+    end
+    b.altAuras._unitID = unitID
+
+    for _, name in ipairs({ "debuffs", "buffs" }) do
+        local set = b.auraSets[name]
+        local native = b.altAuras[name]
+
+        if not native then
+            local ok, frame = pcall(CreateFrame, "AuraContainer", nil, b.root, "CustomAuraContainerTemplate")
+            if not ok or not frame then
+                ns.Print("Alternative aura method failed to create " .. name .. " AuraContainer for " .. b.unit .. ": " .. tostring(frame or "unknown"))
+                return false
+            end
+
+            native = frame
+            b.altAuras[name] = native
+            native._crUnit = b.unit
+            native._crNativeSize = math.max(8, math.floor((set.size or 16) + 0.5))
+            native._crNativeGap = cfg.spacing
+            native:SetFrameLevel(b.root:GetFrameLevel() + 2)
+            native:SetSize(math.max(1, (native._crNativeSize + native._crNativeGap) * math.max(1, cfg.maxCount) - native._crNativeGap), native._crNativeSize + 4)
+            native:Hide()
+        end
+
+        local offset = (b.happyIcon and name == "buffs") and 1 or 0
+        local startX = offset * (native._crNativeSize + native._crNativeGap)
+        native:ClearAllPoints()
+        if set.onLeft then
+            native:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", -startX, 0)
+        else
+            native:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", startX, 0)
+        end
+
+        if native.SetFlowLayoutAnchorPoint then pcall(native.SetFlowLayoutAnchorPoint, native, set.onLeft and "BOTTOMRIGHT" or "BOTTOMLEFT") end
+        if native.SetFlowLayoutGrowthDirection then
+            local dirX = set.onLeft and -1 or 1
+            pcall(native.SetFlowLayoutGrowthDirection, native, dirX, 1)
+        end
+        if native.SetFlowLayoutPadding then pcall(native.SetFlowLayoutPadding, native, 0, 0, 0, 0) end
+        if AnchorUtil and AnchorUtil.FlowLayoutAxis and native.SetFlowLayoutAxis then
+            pcall(native.SetFlowLayoutAxis, native, AnchorUtil.FlowLayoutAxis.Horizontal)
+        end
+        if native.SetFlowLayoutMaximumLineSize then pcall(native.SetFlowLayoutMaximumLineSize, native, math.max(1, native:GetWidth())) end
+
+        if native and native.AddAuraGroup and not native._crReady then
+            local ok, err = pcall(function()
+                native:AddAuraGroup(name, set.filter, {
+                    maxFrameCount = cfg.maxCount,
+                    layout = {
+                        elementWidth = native._crNativeSize or 16,
+                        elementHeight = native._crNativeSize or 16,
+                        elementSpacing = native._crNativeGap or cfg.spacing,
+                        lineSpacing = native._crNativeGap or cfg.spacing,
+                        groupSpacing = 0,
+                        groupLineSpacing = 0,
+                        forceNewLine = false,
+                    },
+                    initializeFrame = function(button)
+                        button._crNativeSize = native._crNativeSize or 16
+                        MakeNativeAuraButton(button, name == "debuffs", set, b)
+                    end,
+                })
+                native:UpdateAllAuras()
+            end)
+            if not ok then
+                native:Hide()
+                native._crReady = false
+                ns.Print("Alternative aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                return false
+            end
+            native._crReady = true
+            ns.Print("Alternative aura method initialized for " .. b.unit .. " " .. name .. ".")
+        end
+
+        if native and native._crReady then
+            local ok, err = pcall(function()
+                local offset = (b.happyIcon and name == "buffs") and 1 or 0
+                local startX = offset * (native._crNativeSize + native._crNativeGap)
+                native:ClearAllPoints()
+                if set.onLeft then
+                    native:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", -startX, 0)
+                else
+                    native:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", startX, 0)
+                end
+                if native.SetFlowLayoutGrowthDirection then
+                    local dirX = set.onLeft and -1 or 1
+                    pcall(native.SetFlowLayoutGrowthDirection, native, dirX, 1)
+                end
+
+                if native.SetUnit then
+                    pcall(native.SetUnit, native, nil)
+                end
+                if native.ClearAllAuras then
+                    pcall(native.ClearAllAuras, native)
+                end
+                native:Hide()
+                native._crUnit = b.unit
+
+                if native.SetEnabled then native:SetEnabled(true) end
+                if native.SetUnit then native:SetUnit(b.unit) end
+                if native.UpdateAllAuras then native:UpdateAllAuras() end
+                if UnitExists(b.unit) then
+                    native:Show()
+                else
+                    native:Hide()
+                end
+            end)
+            if not ok then
+                native:Hide()
+                native._crReady = false
+                ns.Print("Alternative aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                return false
+            end
+
+            for i = 1, #set.icons do
+                set.icons[i]:Hide()
+            end
+        end
+    end
+
+    for _, name in ipairs({ "debuffs", "buffs" }) do
+        local native = b.altAuras and b.altAuras[name]
+        if native and native:IsShown() then
+            return true
+        end
+    end
+    return false
+end
+
 function ns.UpdateAuras(b)
     local unit = b.unit
-    local enabled = ns.Cfg(unit).auras.enabled
+    local cfg = ns.Cfg(unit).auras
+    local enabled = cfg.enabled
+
+    if TryAltAuraMethod(b) then
+        return
+    end
 
     for name, set in pairs(b.auraSets) do
         local n = 0
@@ -482,6 +715,41 @@ function ns.DescribeHappiness()
         "   setting: " .. S(ns.Cfg("pet").happiness)
     local h, dmg, loy = ReadHappiness()
     lines[#lines + 1] = "addon reads: state=" .. S(h) .. " damage=" .. S(dmg) .. " loyalty=" .. S(loy)
+    return lines
+end
+
+function ns.DescribeAuraState()
+    local lines = {}
+    local function S(v)
+        if v == nil then return "nil" end
+        if type(v) == "boolean" then return v and "true" or "false" end
+        if type(v) == "table" then return "table" end
+        if issecretvalue and issecretvalue(v) then return "<secret>" end
+        return tostring(v)
+    end
+
+    for _, unit in ipairs(ns.UNITS) do
+        local b = ns.blocks and ns.blocks[unit]
+        local cfg = b and ns.Cfg(unit).auras or nil
+        lines[#lines + 1] = "unit=" .. unit .. " altMethod=" .. S(cfg and cfg.altMethod) .. " enabled=" .. S(cfg and cfg.enabled)
+        if not b then
+            lines[#lines + 1] = "  no block created"
+        else
+            local f = b.altAuras
+            local anyNative = false
+            if type(f) == "table" then
+                for _, native in pairs(f) do
+                    if native and native.IsShown and native:IsShown() then anyNative = true end
+                end
+            elseif f and f.IsShown then
+                anyNative = f:IsShown()
+            end
+            lines[#lines + 1] = "  AuraContainer exists=" .. S(f ~= nil) .. " ready=" .. S(b.altAurasReady) .. " visible=" .. S(anyNative)
+            if type(f) == "table" then
+                lines[#lines + 1] = "  groups=" .. S(next(f) ~= nil)
+            end
+        end
+    end
     return lines
 end
 

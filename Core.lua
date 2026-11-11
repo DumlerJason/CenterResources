@@ -20,13 +20,13 @@ ns.DEFAULTS = {
     },
     -- These are the TEMPLATE for a layout that has no settings yet (and the migration source).
     units = {
-        player = { enabled = true, hideDefault = false, auras = { enabled = true, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 1,   portraitSize = 64, barLength = 190, barOverlap = 4, barHeight = 18,
+        player = { enabled = true, hideDefault = false, auras = { enabled = true, altMethod = false, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 1,   portraitSize = 64, barLength = 190, barOverlap = 4, barHeight = 18,
                    showName = false, showIcons = true, mirror = false, pos = { x = 0,    y = -190 } },
-        target = { enabled = true, hideDefault = false, auras = { enabled = true, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 1,   portraitSize = 56, barLength = 170, barOverlap = 4, barHeight = 16,
+        target = { enabled = true, hideDefault = false, auras = { enabled = true, altMethod = false, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 1,   portraitSize = 56, barLength = 170, barOverlap = 4, barHeight = 16,
                    showName = true,  showIcons = true, mirror = true,  pos = { x = 0,    y = 200  } },
-        pet    = { enabled = true, happiness = "auto", hideDefault = false, auras = { enabled = true, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 0.9, portraitSize = 40, barLength = 120, barOverlap = 4, barHeight = 12,
+        pet    = { enabled = true, happiness = "auto", hideDefault = false, auras = { enabled = true, altMethod = false, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 0.9, portraitSize = 40, barLength = 120, barOverlap = 4, barHeight = 12,
                    showName = false, showIcons = true, mirror = false, pos = { x = -440, y = -190 } },
-        focus  = { enabled = true, hideDefault = false, auras = { enabled = true, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 0.9, portraitSize = 40, barLength = 120, barOverlap = 4, barHeight = 12,
+        focus  = { enabled = true, hideDefault = false, auras = { enabled = true, altMethod = false, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.9 }, scale = 0.9, portraitSize = 40, barLength = 120, barOverlap = 4, barHeight = 12,
                    showName = true,  showIcons = true, mirror = true,  pos = { x = 440,  y = -190 } },
     },
 }
