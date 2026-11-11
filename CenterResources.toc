@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: CenterResources
+## Notes: Round portrait unit frames with horizontal health/power bars for player, target and pet.
+## Author: You
+## Version: 2.5.2
+## SavedVariables: CenterResourcesDB
+Core.lua
+UnitFrame.lua
+Options.lua
+Main.lua
