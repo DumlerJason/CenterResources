@@ -402,13 +402,13 @@ end
 
 local function TryAltAuraMethod(b)
     local cfg = ns.Cfg(b.unit).auras
-    if not cfg.enabled or not cfg.altMethod then
+    if not cfg.enabled then
         if b.altAuras then
             for _, native in pairs(b.altAuras) do
                 if native and native.Hide then pcall(native.Hide, native) end
             end
         end
-        return false
+        return true
     end
 
     local unitID = UnitExists(b.unit) and (UnitGUID(b.unit) or UnitName(b.unit) or b.unit) or nil
@@ -433,8 +433,8 @@ local function TryAltAuraMethod(b)
         if not native then
             local ok, frame = pcall(CreateFrame, "AuraContainer", nil, b.root, "CustomAuraContainerTemplate")
             if not ok or not frame then
-                ns.Print("Alternative aura method failed to create " .. name .. " AuraContainer for " .. b.unit .. ": " .. tostring(frame or "unknown"))
-                return false
+                ns.Print("Native aura method failed to create " .. name .. " AuraContainer for " .. b.unit .. ": " .. tostring(frame or "unknown"))
+                return true
             end
 
             native = frame
@@ -490,8 +490,8 @@ local function TryAltAuraMethod(b)
             if not ok then
                 native:Hide()
                 native._crReady = false
-                ns.Print("Alternative aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
-                return false
+                ns.Print("Native aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                return true
             end
             native._crReady = true
         end
@@ -511,12 +511,8 @@ local function TryAltAuraMethod(b)
                     pcall(native.SetFlowLayoutGrowthDirection, native, dirX, 1)
                 end
 
-                if native.SetUnit then
-                    pcall(native.SetUnit, native, nil)
-                end
-                if native.ClearAllAuras then
-                    pcall(native.ClearAllAuras, native)
-                end
+                if native.SetUnit then pcall(native.SetUnit, native, nil) end
+                if native.ClearAllAuras then pcall(native.ClearAllAuras, native) end
                 native:Hide()
                 native._crUnit = b.unit
 
@@ -532,8 +528,8 @@ local function TryAltAuraMethod(b)
             if not ok then
                 native:Hide()
                 native._crReady = false
-                ns.Print("Alternative aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
-                return false
+                ns.Print("Native aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                return true
             end
 
             for i = 1, #set.icons do
@@ -548,40 +544,12 @@ local function TryAltAuraMethod(b)
             return true
         end
     end
-    return false
+    return true
 end
 
 function ns.UpdateAuras(b)
-    local unit = b.unit
-    local cfg = ns.Cfg(unit).auras
-    local enabled = cfg.enabled
-
-    if TryAltAuraMethod(b) then
-        return
-    end
-
-    for name, set in pairs(b.auraSets) do
-        local n = 0
-        local off = (b.happyIcon and name == "buffs") and 1 or 0
-        if set.offset ~= off then
-            set.offset = off
-            for i = 1, #set.icons do PositionIcon(set, i) end
-        end
-        if enabled and set.max and UnitExists(unit) then
-            local cap = math.max(0, set.max - off)
-            local list = GetAuraList(unit, set.filter, cap)
-            for i = 1, math.min(#list, cap) do
-                local icon = set.icons[n + 1]
-                if not icon then
-                    icon = MakeAuraIcon(set.container, b)
-                    set.icons[n + 1] = icon
-                    PositionIcon(set, n + 1)
-                end
-                if ApplyAuraIcon(icon, unit, list[i], name == "debuffs") then n = n + 1 end
-            end
-        end
-        for i = n + 1, #set.icons do set.icons[i]:Hide() end
-    end
+    -- Native AuraContainer rendering is now the only aura path.
+    TryAltAuraMethod(b)
 end
 
 ------------------------------------------------------------
@@ -730,7 +698,7 @@ function ns.DescribeAuraState()
     for _, unit in ipairs(ns.UNITS) do
         local b = ns.blocks and ns.blocks[unit]
         local cfg = b and ns.Cfg(unit).auras or nil
-        lines[#lines + 1] = "unit=" .. unit .. " altMethod=" .. S(cfg and cfg.altMethod) .. " enabled=" .. S(cfg and cfg.enabled)
+        lines[#lines + 1] = "unit=" .. unit .. " enabled=" .. S(cfg and cfg.enabled)
         if not b then
             lines[#lines + 1] = "  no block created"
         else
