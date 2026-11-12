@@ -30,29 +30,21 @@ local function SetBarValue(bar, cur, max)
     end
 end
 
-local function SetBarText(fs, cur, pct)
-    local mode = ns.DB.general.textMode
-    if mode == "none" then fs:SetText(""); return end
+local function SetBarText(fs, cur, max)
     local ok = pcall(function()
-        if mode == "percent" then
-            fs:SetFormattedText("%.0f%%", pct)
-        elseif mode == "value" then
-            fs:SetText(AbbreviateLargeNumbers(cur))
-        else
-            fs:SetFormattedText("%s  %.0f%%", AbbreviateLargeNumbers(cur), pct)
-        end
+        fs:SetText(string.format("%s/%s", AbbreviateNumbers(cur), AbbreviateNumbers(max)))
     end)
     if not ok then fs:SetText("") end
 end
 
-local function GetPercent(apiFunc, cur, max, ...)
-    if apiFunc and CurveConstants and CurveConstants.ScaleTo100 then
-        local ok, pct = pcall(apiFunc, ...)
-        if ok then return pct end
-    end
-    local ok, pct = pcall(function() return cur / max * 100 end)
-    return ok and pct or 0
-end
+-- local function GetPercent(apiFunc, cur, max, ...)
+--     if apiFunc and CurveConstants and CurveConstants.ScaleTo100 then
+--         local ok, pct = pcall(apiFunc, ...)
+--         if ok then return pct end
+--     end
+--     local ok, pct = pcall(function() return cur / max * 100 end)
+--     return ok and pct or 0
+-- end
 
 local function HasPower(unit)
     local ok, res = pcall(function() return UnitPowerMax(unit) > 0 end)
@@ -125,27 +117,27 @@ local DISPEL_COLORS = {
     Magic = { 0.2, 0.6, 1 }, Curse = { 0.7, 0.2, 1 }, Disease = { 0.7, 0.5, 0.1 },
     Poison = { 0.1, 0.7, 0.2 }, Bleed = { 0.85, 0.1, 0.1 }, Enrage = { 1, 0.45, 0 },
 }
-local dispelCurve
+-- local dispelCurve
 
-local function GetDispelCurve()
-    if dispelCurve == nil then
-        dispelCurve = false
-        pcall(function()
-            local types = Enum and (Enum.SpellDispelType or Enum.DispelType)
-            if C_CurveUtil and C_CurveUtil.CreateColorCurve and types and Enum.LuaCurveType then
-                local curve = C_CurveUtil.CreateColorCurve()
-                curve:SetType(Enum.LuaCurveType.Step)
-                curve:AddPoint(0, CreateColor(0.8, 0.1, 0.1, 1))
-                for name, value in pairs(types) do
-                    local c = DISPEL_COLORS[name]
-                    if c then curve:AddPoint(value, CreateColor(c[1], c[2], c[3], 1)) end
-                end
-                dispelCurve = curve
-            end
-        end)
-    end
-    return dispelCurve or nil
-end
+-- local function GetDispelCurve()
+--     if dispelCurve == nil then
+--         dispelCurve = false
+--         pcall(function()
+--             local types = Enum and (Enum.SpellDispelType or Enum.DispelType)
+--             if C_CurveUtil and C_CurveUtil.CreateColorCurve and types and Enum.LuaCurveType then
+--                 local curve = C_CurveUtil.CreateColorCurve()
+--                 curve:SetType(Enum.LuaCurveType.Step)
+--                 curve:AddPoint(0, CreateColor(0.8, 0.1, 0.1, 1))
+--                 for name, value in pairs(types) do
+--                     local c = DISPEL_COLORS[name]
+--                     if c then curve:AddPoint(value, CreateColor(c[1], c[2], c[3], 1)) end
+--                 end
+--                 dispelCurve = curve
+--             end
+--         end)
+--     end
+--     return dispelCurve or nil
+-- end
 
 -- Every tooltip (the unit frame's own and the aura tooltips) goes to the same spot.
 function ns.AnchorTooltip(b)
@@ -179,11 +171,13 @@ local function MakeAuraIcon(parent, block)
     elseif f.SetPassThroughButtons then
         pcall(f.SetPassThroughButtons, f, "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5")
     end
-    f:SetScript("OnEnter", function(self) self.hovering = true; ShowAuraTooltip(self) end)
-    f:SetScript("OnLeave", function(self) self.hovering = false; GameTooltip:Hide() end)
-    f:SetScript("OnHide", function(self)
-        if self.hovering then self.hovering = false; GameTooltip:Hide() end
-    end)
+    
+    --f:SetScript("OnEnter", function(self) self.hovering = true; ShowAuraTooltip(self) end)
+    --f:SetScript("OnLeave", function(self) self.hovering = false; GameTooltip:Hide() end)
+    --f:SetScript("OnHide", function(self)
+    --    if self.hovering then self.hovering = false; GameTooltip:Hide() end
+    --end)
+    
     f.border = f:CreateTexture(nil, "BACKGROUND")
     f.border:SetPoint("TOPLEFT", -1, 1)
     f.border:SetPoint("BOTTOMRIGHT", 1, -1)
@@ -270,62 +264,61 @@ local function LayoutAuras(b, L, overlap, D, healthOnLeft)
 end
 
 -- Returns a list of { id = auraInstanceID, data = auraData-or-nil }
-local function GetAuraList(unit, filter, max)
-    local list = {}
-    if not C_UnitAuras then return list end
-    if C_UnitAuras.GetUnitAuras then
-        local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit, filter, max)
-        if ok and type(auras) == "table" then
-            for _, a in ipairs(auras) do
-                list[#list + 1] = { id = a.auraInstanceID, data = a }
-            end
-            return list
-        end
-    end
-    if C_UnitAuras.GetUnitAuraInstanceIDs then
-        local ok, ids = pcall(C_UnitAuras.GetUnitAuraInstanceIDs, unit, filter, max)
-        if ok and type(ids) == "table" then
-            for _, id in ipairs(ids) do list[#list + 1] = { id = id } end
-        end
-    end
-    return list
-end
+-- local function GetAuraList(unit, filter, max)
+--     local list = {}
+--     if not C_UnitAuras then return list end
+--     if C_UnitAuras.GetUnitAuras then
+--         local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit, filter, max)
+--         if ok and type(auras) == "table" then
+--             for _, a in ipairs(auras) do
+--                 list[#list + 1] = { id = a.auraInstanceID, data = a }
+--             end
+--             return list
+--         end
+--     end
+--     if C_UnitAuras.GetUnitAuraInstanceIDs then
+--         local ok, ids = pcall(C_UnitAuras.GetUnitAuraInstanceIDs, unit, filter, max)
+--         if ok and type(ids) == "table" then
+--             for _, id in ipairs(ids) do list[#list + 1] = { id = id } end
+--         end
+--     end
+--     return list
+-- end
 
-local function ApplyAuraIcon(icon, unit, entry, harmful)
-    local id = entry.id
-    local data = entry.data or C_UnitAuras.GetAuraDataByAuraInstanceID(unit, id)
-    if not data then return false end
-    icon.tex:SetTexture(data.icon)
-    icon.unit, icon.auraID, icon.harmful = unit, id, harmful
+-- local function ApplyAuraIcon(icon, unit, entry, harmful)
+--     local id = entry.id
+--     local data = entry.data or C_UnitAuras.GetAuraDataByAuraInstanceID(unit, id)
+--     if not data then return false end
+--     icon.tex:SetTexture(data.icon)
+--     icon.unit, icon.auraID, icon.harmful = unit, id, harmful
 
-    pcall(function()
-        local d = C_UnitAuras.GetAuraDuration(unit, id)
-        if d then icon.cd:SetCooldownFromDurationObject(d, true) else icon.cd:Clear() end
-    end)
+--     pcall(function()
+--         local d = C_UnitAuras.GetAuraDuration(unit, id)
+--         if d then icon.cd:SetCooldownFromDurationObject(d, true) else icon.cd:Clear() end
+--     end)
 
-    icon.count:SetText("")
-    pcall(function() icon.count:SetText(C_UnitAuras.GetAuraApplicationDisplayCount(unit, id, 2)) end)
+--     icon.count:SetText("")
+--     pcall(function() icon.count:SetText(C_UnitAuras.GetAuraApplicationDisplayCount(unit, id, 2)) end)
 
-    if harmful then
-        local ok = false
-        local curve = GetDispelCurve()
-        if curve then
-            ok = pcall(function()
-                local col = C_UnitAuras.GetAuraDispelTypeColor(unit, id, curve)
-                icon.border:SetVertexColor(col:GetRGBA())
-            end)
-        end
-        if not ok then icon.border:SetVertexColor(0.8, 0.1, 0.1, 1) end
-    else
-        icon.border:SetVertexColor(0, 0, 0, 1)
-    end
-    icon:Show()
-    if icon.hovering then ShowAuraTooltip(icon) end
-    return true
-end
+--     if harmful then
+--         local ok = false
+--         local curve = GetDispelCurve()
+--         if curve then
+--             ok = pcall(function()
+--                 local col = C_UnitAuras.GetAuraDispelTypeColor(unit, id, curve)
+--                 icon.border:SetVertexColor(col:GetRGBA())
+--             end)
+--         end
+--         if not ok then icon.border:SetVertexColor(0.8, 0.1, 0.1, 1) end
+--     else
+--         icon.border:SetVertexColor(0, 0, 0, 1)
+--     end
+--     icon:Show()
+--     if icon.hovering then ShowAuraTooltip(icon) end
+--     return true
+-- end
 
 local function MakeNativeAuraButton(button, harmful, set, block)
-    button:EnableMouse(true)
     button._crUnit = block and block.unit or button._crUnit
     button._crFilter = harmful and "HARMFUL" or "HELPFUL"
 
@@ -367,24 +360,6 @@ local function MakeNativeAuraButton(button, harmful, set, block)
     border:SetColorTexture(0, 0, 0, 0)
     button.Border = border
 
-    button:SetScript("OnEnter", function(self)
-        local unit = self._crUnit or (block and block.unit) or self.unit
-        local id = self.auraInstanceID or self._crAuraID
-        if not unit or not id then return end
-        ns.AnchorTooltip(block)
-        local filter = self._crFilter or (harmful and "HARMFUL" or "HELPFUL")
-        if filter == "HARMFUL" and GameTooltip.SetUnitDebuffByAuraInstanceID then
-            pcall(GameTooltip.SetUnitDebuffByAuraInstanceID, GameTooltip, unit, id, "HARMFUL")
-        elseif filter == "HELPFUL" and GameTooltip.SetUnitBuffByAuraInstanceID then
-            pcall(GameTooltip.SetUnitBuffByAuraInstanceID, GameTooltip, unit, id, "HELPFUL")
-        else
-            pcall(GameTooltip.SetUnit, GameTooltip, unit)
-        end
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    button:SetScript("OnHide", function() GameTooltip:Hide() end)
-
     if harmful then
         button:SetDispelTypeTexture(border, {
             showWhenHelpful = false,
@@ -401,25 +376,18 @@ local function MakeNativeAuraButton(button, harmful, set, block)
 end
 
 local function TryAltAuraMethod(b)
+    -- updated to always use the alt method.
     local cfg = ns.Cfg(b.unit).auras
-    if not cfg.enabled then
+    if not cfg.enabled then --or not cfg.altMethod then
         if b.altAuras then
             for _, native in pairs(b.altAuras) do
                 if native and native.Hide then pcall(native.Hide, native) end
             end
         end
-        return true
+        return false
     end
 
     local unitID = UnitExists(b.unit) and (UnitGUID(b.unit) or UnitName(b.unit) or b.unit) or nil
-    if b.altAuras and b.altAuras._unitID ~= unitID then
-        for _, native in pairs(b.altAuras) do
-            if native and native.SetUnit then pcall(native.SetUnit, native, nil) end
-            if native and native.ClearAllAuras then pcall(native.ClearAllAuras, native) end
-            if native and native.Hide then pcall(native.Hide, native) end
-        end
-        b.altAuras = {}
-    end
 
     if not b.altAuras then
         b.altAuras = {}
@@ -433,8 +401,8 @@ local function TryAltAuraMethod(b)
         if not native then
             local ok, frame = pcall(CreateFrame, "AuraContainer", nil, b.root, "CustomAuraContainerTemplate")
             if not ok or not frame then
-                ns.Print("Native aura method failed to create " .. name .. " AuraContainer for " .. b.unit .. ": " .. tostring(frame or "unknown"))
-                return true
+                ns.Print("Alternative aura method failed to create " .. name .. " AuraContainer for " .. b.unit .. ": " .. tostring(frame or "unknown"))
+                return false
             end
 
             native = frame
@@ -443,7 +411,6 @@ local function TryAltAuraMethod(b)
             native._crNativeSize = math.max(8, math.floor((set.size or 16) + 0.5))
             native._crNativeGap = cfg.spacing
             native:SetFrameLevel(b.root:GetFrameLevel() + 2)
-            native:SetSize(math.max(1, (native._crNativeSize + native._crNativeGap) * math.max(1, cfg.maxCount) - native._crNativeGap), native._crNativeSize + 4)
             native:Hide()
         end
 
@@ -455,17 +422,6 @@ local function TryAltAuraMethod(b)
         else
             native:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", startX, 0)
         end
-
-        if native.SetFlowLayoutAnchorPoint then pcall(native.SetFlowLayoutAnchorPoint, native, set.onLeft and "BOTTOMRIGHT" or "BOTTOMLEFT") end
-        if native.SetFlowLayoutGrowthDirection then
-            local dirX = set.onLeft and -1 or 1
-            pcall(native.SetFlowLayoutGrowthDirection, native, dirX, 1)
-        end
-        if native.SetFlowLayoutPadding then pcall(native.SetFlowLayoutPadding, native, 0, 0, 0, 0) end
-        if AnchorUtil and AnchorUtil.FlowLayoutAxis and native.SetFlowLayoutAxis then
-            pcall(native.SetFlowLayoutAxis, native, AnchorUtil.FlowLayoutAxis.Horizontal)
-        end
-        if native.SetFlowLayoutMaximumLineSize then pcall(native.SetFlowLayoutMaximumLineSize, native, math.max(1, native:GetWidth())) end
 
         if native and native.AddAuraGroup and not native._crReady then
             local ok, err = pcall(function()
@@ -490,8 +446,8 @@ local function TryAltAuraMethod(b)
             if not ok then
                 native:Hide()
                 native._crReady = false
-                ns.Print("Native aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
-                return true
+                ns.Print("Alternative aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                return false
             end
             native._crReady = true
         end
@@ -511,8 +467,12 @@ local function TryAltAuraMethod(b)
                     pcall(native.SetFlowLayoutGrowthDirection, native, dirX, 1)
                 end
 
-                if native.SetUnit then pcall(native.SetUnit, native, nil) end
-                if native.ClearAllAuras then pcall(native.ClearAllAuras, native) end
+                if native.SetUnit then
+                    pcall(native.SetUnit, native, nil)
+                end
+                if native.ClearAllAuras then
+                    pcall(native.ClearAllAuras, native)
+                end
                 native:Hide()
                 native._crUnit = b.unit
 
@@ -528,8 +488,8 @@ local function TryAltAuraMethod(b)
             if not ok then
                 native:Hide()
                 native._crReady = false
-                ns.Print("Native aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
-                return true
+                ns.Print("Alternative aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                return false
             end
 
             for i = 1, #set.icons do
@@ -544,11 +504,14 @@ local function TryAltAuraMethod(b)
             return true
         end
     end
-    return true
+    return false
 end
 
 function ns.UpdateAuras(b)
-    -- Native AuraContainer rendering is now the only aura path.
+    local unit = b.unit
+    local cfg = ns.Cfg(unit).auras
+    local enabled = cfg.enabled
+
     TryAltAuraMethod(b)
 end
 
@@ -698,7 +661,7 @@ function ns.DescribeAuraState()
     for _, unit in ipairs(ns.UNITS) do
         local b = ns.blocks and ns.blocks[unit]
         local cfg = b and ns.Cfg(unit).auras or nil
-        lines[#lines + 1] = "unit=" .. unit .. " enabled=" .. S(cfg and cfg.enabled)
+        lines[#lines + 1] = "unit=" .. unit .. " altMethod=" .. S(cfg and cfg.altMethod) .. " enabled=" .. S(cfg and cfg.enabled)
         if not b then
             lines[#lines + 1] = "  no block created"
         else
@@ -988,20 +951,26 @@ end
 -- Updates
 ------------------------------------------------------------
 function ns.UpdateHealth(b)
+    if not b or not b.unit then return end
+    
     local unit = b.unit
     if not UnitExists(unit) then
         SetBarValue(b.health, 1, 1)
         b.health.text:SetText("")
         return
     end
+
     local cur, max = UnitHealth(unit), UnitHealthMax(unit)
+    --if issecretvalue and (issecretvalue(cur) or issecretvalue(max)) then return end
     SetBarValue(b.health, cur, max)
-    local pct = GetPercent(UnitHealthPercent, cur, max,
-        unit, true, CurveConstants and CurveConstants.ScaleTo100)
-    SetBarText(b.health.text, cur, pct)
+    -- local pct = GetPercent(UnitHealthPercent, cur, max,
+    --     unit, true, CurveConstants and CurveConstants.ScaleTo100)
+    SetBarText(b.health.text, cur, max)
 end
 
 function ns.UpdatePower(b)
+    if not b then return end
+
     local unit = b.unit
     if not UnitExists(unit) then
         SetBarValue(b.power, 1, 1)
@@ -1020,9 +989,7 @@ function ns.UpdatePower(b)
     SetBarValue(b.power, cur, max)
     local c = PowerBarColor and ((token and PowerBarColor[token]) or PowerBarColor[pType])
     if c then b.power:SetStatusBarColor(c.r, c.g, c.b) else b.power:SetStatusBarColor(0.5, 0.5, 0.5) end
-    local pct = GetPercent(UnitPowerPercent, cur, max,
-        unit, pType, false, CurveConstants and CurveConstants.ScaleTo100)
-    SetBarText(b.power.text, cur, pct)
+    SetBarText(b.power.text, cur, max)
 end
 
 function ns.UpdateColors(b)
@@ -1092,9 +1059,10 @@ local function FindSecondary()
     if not t then return nil end
     local ok, max = pcall(UnitPowerMax, "player", t)
     if not ok then return nil end
-    if issecretvalue and issecretvalue(max) then return nil end
-    if type(max) == "number" and max > 0 then return t, math.min(max, 10) end
-    return nil
+    --if issecretvalue and issecretvalue(max) then return nil end
+    --if type(max) == "number" and max > 0 then return t, math.min(max, 10) end
+    --return nil
+    return t, max
 end
 
 function ns.UpdateSecondary(b)
