@@ -253,70 +253,17 @@ local function LayoutAuras(b, L, overlap, D, healthOnLeft)
         set.timerPx, set.countPx = timerPx, countPx
         set.max = math.max(1, a.maxCount)
         set.container:ClearAllPoints()
+
         if set.onLeft then
             set.container:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", -overlap, 3)
         else
             set.container:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", overlap, 3)
         end
+        
         for i = 1, #set.icons do PositionIcon(set, i) end
     end
     if b.happy then ns.PositionHappy(b) end
 end
-
--- Returns a list of { id = auraInstanceID, data = auraData-or-nil }
--- local function GetAuraList(unit, filter, max)
---     local list = {}
---     if not C_UnitAuras then return list end
---     if C_UnitAuras.GetUnitAuras then
---         local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit, filter, max)
---         if ok and type(auras) == "table" then
---             for _, a in ipairs(auras) do
---                 list[#list + 1] = { id = a.auraInstanceID, data = a }
---             end
---             return list
---         end
---     end
---     if C_UnitAuras.GetUnitAuraInstanceIDs then
---         local ok, ids = pcall(C_UnitAuras.GetUnitAuraInstanceIDs, unit, filter, max)
---         if ok and type(ids) == "table" then
---             for _, id in ipairs(ids) do list[#list + 1] = { id = id } end
---         end
---     end
---     return list
--- end
-
--- local function ApplyAuraIcon(icon, unit, entry, harmful)
---     local id = entry.id
---     local data = entry.data or C_UnitAuras.GetAuraDataByAuraInstanceID(unit, id)
---     if not data then return false end
---     icon.tex:SetTexture(data.icon)
---     icon.unit, icon.auraID, icon.harmful = unit, id, harmful
-
---     pcall(function()
---         local d = C_UnitAuras.GetAuraDuration(unit, id)
---         if d then icon.cd:SetCooldownFromDurationObject(d, true) else icon.cd:Clear() end
---     end)
-
---     icon.count:SetText("")
---     pcall(function() icon.count:SetText(C_UnitAuras.GetAuraApplicationDisplayCount(unit, id, 2)) end)
-
---     if harmful then
---         local ok = false
---         local curve = GetDispelCurve()
---         if curve then
---             ok = pcall(function()
---                 local col = C_UnitAuras.GetAuraDispelTypeColor(unit, id, curve)
---                 icon.border:SetVertexColor(col:GetRGBA())
---             end)
---         end
---         if not ok then icon.border:SetVertexColor(0.8, 0.1, 0.1, 1) end
---     else
---         icon.border:SetVertexColor(0, 0, 0, 1)
---     end
---     icon:Show()
---     if icon.hovering then ShowAuraTooltip(icon) end
---     return true
--- end
 
 local function MakeNativeAuraButton(button, harmful, set, block)
     button._crUnit = block and block.unit or button._crUnit
@@ -375,7 +322,7 @@ local function MakeNativeAuraButton(button, harmful, set, block)
     end
 end
 
-local function TryAltAuraMethod(b)
+function ns.UpdateAuras(b)
     -- updated to always use the alt method.
     local cfg = ns.Cfg(b.unit).auras
     if not cfg.enabled then --or not cfg.altMethod then
@@ -384,7 +331,7 @@ local function TryAltAuraMethod(b)
                 if native and native.Hide then pcall(native.Hide, native) end
             end
         end
-        return false
+        return
     end
 
     local unitID = UnitExists(b.unit) and (UnitGUID(b.unit) or UnitName(b.unit) or b.unit) or nil
@@ -402,7 +349,7 @@ local function TryAltAuraMethod(b)
             local ok, frame = pcall(CreateFrame, "AuraContainer", nil, b.root, "CustomAuraContainerTemplate")
             if not ok or not frame then
                 ns.Print("Alternative aura method failed to create " .. name .. " AuraContainer for " .. b.unit .. ": " .. tostring(frame or "unknown"))
-                return false
+                return
             end
 
             native = frame
@@ -414,13 +361,11 @@ local function TryAltAuraMethod(b)
             native:Hide()
         end
 
-        local offset = (b.happyIcon and name == "buffs") and 1 or 0
-        local startX = offset * (native._crNativeSize + native._crNativeGap)
         native:ClearAllPoints()
         if set.onLeft then
-            native:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", -startX, 0)
+            native:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", 0, 0)
         else
-            native:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", startX, 0)
+            native:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", 0, 0)
         end
 
         if native and native.AddAuraGroup and not native._crReady then
@@ -454,16 +399,16 @@ local function TryAltAuraMethod(b)
 
         if native and native._crReady then
             local ok, err = pcall(function()
-                local offset = (b.happyIcon and name == "buffs") and 1 or 0
-                local startX = offset * (native._crNativeSize + native._crNativeGap)
                 native:ClearAllPoints()
                 if set.onLeft then
-                    native:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", -startX, 0)
+                    native:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", 0, 0)
                 else
-                    native:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", startX, 0)
+                    native:SetPoint("BOTTOMLEFT", set.container, "BOTTOMLEFT", 0, 0)
                 end
+
                 if native.SetFlowLayoutGrowthDirection then
-                    local dirX = set.onLeft and -1 or 1
+                    -- when onLeft, the direction is 0, not -1 to prevent the appearance of icons shifting more and more to the left.
+                    local dirX = set.onLeft and 0 or 1
                     pcall(native.SetFlowLayoutGrowthDirection, native, dirX, 1)
                 end
 
@@ -501,18 +446,9 @@ local function TryAltAuraMethod(b)
     for _, name in ipairs({ "debuffs", "buffs" }) do
         local native = b.altAuras and b.altAuras[name]
         if native and native:IsShown() then
-            return true
+            return
         end
     end
-    return false
-end
-
-function ns.UpdateAuras(b)
-    local unit = b.unit
-    local cfg = ns.Cfg(unit).auras
-    local enabled = cfg.enabled
-
-    TryAltAuraMethod(b)
 end
 
 ------------------------------------------------------------
