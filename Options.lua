@@ -1,4 +1,6 @@
 local ADDON, ns = ...
+-- control changed flags
+ns.flags = ns.flags or {}
 
 local controls = {}
 
@@ -10,7 +12,7 @@ end
 ------------------------------------------------------------
 -- Widgets (built from plain frames/textures: no templates to break)
 ------------------------------------------------------------
-local function NewSlider(parent, label, minV, maxV, step, get, set, suffix)
+local function NewSlider(parent, label, minV, maxV, step, get, set, suffix, key)
     local f = CreateFrame("Frame", nil, parent)
     f:SetSize(260, 42)
     local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -141,6 +143,7 @@ local function BuildUnitTab(content, unit)
     local function abool(key)
         return function() return A()[key] end, function(v) A()[key] = v; ns.Refresh() end
     end
+    
     -- "mult" converts the stored value to what the slider shows (e.g. 0.4 -> 40)
     local function anum(key, mult)
         return function() return math.floor(A()[key] * mult + 0.5) end,
@@ -185,19 +188,25 @@ local function BuildUnitTab(content, unit)
     -- Page 1: frame
     local g, s = bool("enabled")
     P(NewCheck(p1, "Show this frame", g, s), p1, 0, 0)
+
     g, s = num("scale")
     P(NewSlider(p1, "Scale", 0.5, 2, 0.05, g, s), p1, 0, 1)
+
     g, s = num("portraitSize")
     P(NewSlider(p1, "Portrait size", 32, 128, 2, g, s), p1, 0, 2)
+
     g, s = num("barLength")
     P(NewSlider(p1, "Bar length", 60, 400, 5, g, s), p1, 0, 3)
+
     g, s = num("barHeight")
     P(NewSlider(p1, "Bar height", 6, 40, 1, g, s), p1, 0, 4)
 
     g, s = bool("showName")
     P(NewCheck(p1, "Show name below health bar", g, s), p1, 1, 0)
+
     g, s = bool("showIcons")
     P(NewCheck(p1, "Show status icons", g, s), p1, 1, 1)
+
     g, s = bool("mirror")
     P(NewCheck(p1, "Mirror (health on the right)", g, s), p1, 1, 2)
     P(NewButton(p1, "Reset position", 170, function()
@@ -206,8 +215,10 @@ local function BuildUnitTab(content, unit)
         p.x, p.y = d.x, d.y
         ns.Refresh()
     end), p1, 1, 3)
+
     g, s = bool("hideDefault")
     P(NewCheck(p1, "Hide Blizzard's default frame", g, s), p1, 1, 4)
+
     g, s = num("barOverlap")
     P(NewSlider(p1, "Bar overlap under portrait (%)", 0, 20, 1, g, s, "%"), p1, 1, 5)
     if unit == "pet" then
@@ -222,16 +233,22 @@ local function BuildUnitTab(content, unit)
     -- Page 2: auras
     g, s = abool("enabled")
     P(NewCheck(p2, "Show buffs and debuffs", g, s), p2, 0, 0)
+
     g, s = anum("sizeRatio", 100)
     P(NewSlider(p2, "Icon size (% of portrait)", 20, 80, 2, g, s, "%"), p2, 0, 1)
+
     g, s = anum("spacing", 1)
     P(NewSlider(p2, "Space between icons", 0, 12, 1, g, s, " px"), p2, 0, 2)
+
     g, s = anum("maxCount", 1)
     P(NewSlider(p2, "Max icons per row", 1, 20, 1, g, s), p2, 0, 3)
-    g, s = anum("timerScale", 100)
-    P(NewSlider(p2, "Timer text size", 50, 150, 5, g, s, "%"), p2, 1, 1)
-    g, s = anum("countScale", 100)
-    P(NewSlider(p2, "Stack count text size", 50, 150, 5, g, s, "%"), p2, 1, 2)
+    
+    --g, s = anum("timerScale", 100)
+    --P(NewSlider(p2, "Timer text size", 50, 150, 5, g, s, "%", "timerScale"), p2, 1, 1)
+
+    --g, s = anum("countScale", 100)
+    --P(NewSlider(p2, "Stack count text size", 50, 150, 5, g, s, "%"), p2, 1, 2)
+
     Note(p2)
 end
 

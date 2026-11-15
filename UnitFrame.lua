@@ -109,6 +109,11 @@ local DISPEL_COLORS = {
     Poison = { 0.1, 0.7, 0.2 }, Bleed = { 0.85, 0.1, 0.1 }, Enrage = { 1, 0.45, 0 },
 }
 
+-- Return the block for the unit name.
+function ns.GetUnitFrame(unit)
+    return blocks[unit]
+end
+
 -- Every tooltip (the unit frame's own and the aura tooltips) goes to the same spot.
 function ns.AnchorTooltip(b)
     GameTooltip:SetOwner(b.root, "ANCHOR_RIGHT")
@@ -192,8 +197,10 @@ end
 local function LayoutAuras(b, L, overlap, D, healthOnLeft)
     local a = ns.Cfg(b.unit).auras
     local size = math.max(8, math.floor(D * a.sizeRatio + 0.5))
-    local timerPx = size * a.timerScale
-    local countPx = math.max(7, math.floor(size * 0.45 * a.countScale + 0.5))
+
+    -- lock timer font to 50% and counter font to 40% of size
+    local timerPx = size * 0.5 --a.timerScale
+    local countPx = math.max(7, math.floor(size * 0.4 )) --* a.countScale + 0.5))
     for name, set in pairs(b.auraSets) do
         local bar = (name == "debuffs") and b.health or b.power
         set.onLeft = ((name == "debuffs") == healthOnLeft)
@@ -270,11 +277,6 @@ local function MakeNativeAuraButton(button, harmful, set, block)
     end
 end
 
--- Reapply fonts when the font size may have changed in the options.
-local function ReapplyNativeAuraFonts(b)
-
-end
-
 function ns.UpdateAuras(b)
     -- updated to always use the alt method.
     local cfg = ns.Cfg(b.unit).auras
@@ -313,7 +315,6 @@ function ns.UpdateAuras(b)
             native:SetFrameLevel(b.root:GetFrameLevel() + 2)
             native:Hide()
         end
-
         native:ClearAllPoints()
         if set.onLeft then
             native:SetPoint("BOTTOMRIGHT", set.container, "BOTTOMRIGHT", 0, 0)
@@ -345,7 +346,7 @@ function ns.UpdateAuras(b)
                 native:Hide()
                 native._crReady = false
                 ns.Print("Native aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
-                return false
+                return
             end
             native._crReady = true
         end
@@ -387,37 +388,13 @@ function ns.UpdateAuras(b)
                 native:Hide()
                 native._crReady = false
                 ns.Print("Native aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
-                return false
+                return
             end
 
             for i = 1, #set.icons do
                 set.icons[i]:Hide()
             end
         end
-    end
-
-    -- Update aura fonts?
-    for _, name in ipairs({ "debuffs", "buffs" }) do
-        local set = b.auraSets[name]
-        local native = b.altAuras and b.altAuras[name]
-        if native and native.GetAuraButtons then
-            local buttons = native:GetAuraButtons()
-            if buttons then
-                for _, button in ipairs(buttons) do
-                    if button and button.Cooldown and button.Cooldown.SetCountdownFont then
-                        button.Cooldown:SetHideCountdownNumbers((set.timerPx or 12) < 7.5)
-                        pcall(button.Cooldown.SetCountdownFont, button.Cooldown, GetAuraFont(set.timerPx or 12))
-                    end
-                    if button and button.Count then
-                        local font = button.Count:GetFont() or GameFontNormalSmall:GetFont()
-                        button.Count:SetFont(font, set.countPx or 10, "OUTLINE")
-                    end
-                end
-            end
-        end
-        --if native and native:IsShown() then
-        --    return
-        --end
     end
 end
 
@@ -438,6 +415,18 @@ local MOOD = {
     [3] = { "Happy",   0.2, 0.9, 0.2 },
 }
 local happyTexOK
+
+-- Optionally hide Blizzard's own unit frames. We only touch alpha and the clickable
+-- area (no re-parenting, no moving), which is the least likely way to cause taint.
+local BLIZZ = {
+                player = "PlayerFrame",
+                target = "TargetFrame",
+                pet = "PetFrame",
+                focus = "FocusFrame"
+            }
+local hooked, hidden, touched = {}, {}, {}
+local settingAlpha = false
+
 
 local function HappyIconUsable()
     if happyTexOK == nil then
@@ -1012,12 +1001,7 @@ end
 ------------------------------------------------------------
 -- Refresh (applies settings; deferred during combat)
 ------------------------------------------------------------
--- Optionally hide Blizzard's own unit frames. We only touch alpha and the clickable
--- area (no re-parenting, no moving), which is the least likely way to cause taint.
-local BLIZZ = { player = "PlayerFrame", target = "TargetFrame", pet = "PetFrame", focus = "FocusFrame" }
-local hooked, hidden, touched = {}, {}, {}
-local settingAlpha = false
-
+-- Refers to Blizzard settings at the top of this file.
 function ns.ApplyBlizzard(unit)
     local f = _G[BLIZZ[unit]]
     if not f then return end
