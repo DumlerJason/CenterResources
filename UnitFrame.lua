@@ -37,15 +37,6 @@ local function SetBarText(fs, cur, max)
     if not ok then fs:SetText("") end
 end
 
--- local function GetPercent(apiFunc, cur, max, ...)
---     if apiFunc and CurveConstants and CurveConstants.ScaleTo100 then
---         local ok, pct = pcall(apiFunc, ...)
---         if ok then return pct end
---     end
---     local ok, pct = pcall(function() return cur / max * 100 end)
---     return ok and pct or 0
--- end
-
 local function HasPower(unit)
     local ok, res = pcall(function() return UnitPowerMax(unit) > 0 end)
     if ok then return res end
@@ -117,47 +108,10 @@ local DISPEL_COLORS = {
     Magic = { 0.2, 0.6, 1 }, Curse = { 0.7, 0.2, 1 }, Disease = { 0.7, 0.5, 0.1 },
     Poison = { 0.1, 0.7, 0.2 }, Bleed = { 0.85, 0.1, 0.1 }, Enrage = { 1, 0.45, 0 },
 }
--- local dispelCurve
-
--- local function GetDispelCurve()
---     if dispelCurve == nil then
---         dispelCurve = false
---         pcall(function()
---             local types = Enum and (Enum.SpellDispelType or Enum.DispelType)
---             if C_CurveUtil and C_CurveUtil.CreateColorCurve and types and Enum.LuaCurveType then
---                 local curve = C_CurveUtil.CreateColorCurve()
---                 curve:SetType(Enum.LuaCurveType.Step)
---                 curve:AddPoint(0, CreateColor(0.8, 0.1, 0.1, 1))
---                 for name, value in pairs(types) do
---                     local c = DISPEL_COLORS[name]
---                     if c then curve:AddPoint(value, CreateColor(c[1], c[2], c[3], 1)) end
---                 end
---                 dispelCurve = curve
---             end
---         end)
---     end
---     return dispelCurve or nil
--- end
 
 -- Every tooltip (the unit frame's own and the aura tooltips) goes to the same spot.
 function ns.AnchorTooltip(b)
     GameTooltip:SetOwner(b.root, "ANCHOR_RIGHT")
-end
-
-local function ShowAuraTooltip(icon)
-    if not icon.auraID then return end
-    ns.AnchorTooltip(icon.block)
-    local ok = false
-    if icon.harmful then
-        if GameTooltip.SetUnitDebuffByAuraInstanceID then
-            ok = pcall(GameTooltip.SetUnitDebuffByAuraInstanceID, GameTooltip, icon.unit, icon.auraID, "HARMFUL")
-        end
-    else
-        if GameTooltip.SetUnitBuffByAuraInstanceID then
-            ok = pcall(GameTooltip.SetUnitBuffByAuraInstanceID, GameTooltip, icon.unit, icon.auraID, "HELPFUL")
-        end
-    end
-    if ok then GameTooltip:Show() else GameTooltip:Hide() end
 end
 
 local function MakeAuraIcon(parent, block)
@@ -171,13 +125,7 @@ local function MakeAuraIcon(parent, block)
     elseif f.SetPassThroughButtons then
         pcall(f.SetPassThroughButtons, f, "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5")
     end
-    
-    --f:SetScript("OnEnter", function(self) self.hovering = true; ShowAuraTooltip(self) end)
-    --f:SetScript("OnLeave", function(self) self.hovering = false; GameTooltip:Hide() end)
-    --f:SetScript("OnHide", function(self)
-    --    if self.hovering then self.hovering = false; GameTooltip:Hide() end
-    --end)
-    
+
     f.border = f:CreateTexture(nil, "BACKGROUND")
     f.border:SetPoint("TOPLEFT", -1, 1)
     f.border:SetPoint("BOTTOMRIGHT", 1, -1)
@@ -198,12 +146,12 @@ end
 
 local auraFonts = {}
 local function GetAuraFont(px)
-    px = math.max(6, math.floor(px + 0.5))
-    local name = "CenterResourcesAuraTimer" .. px
+    local localPx = math.max(6, math.floor(px + 0.5))
+    local name = "CenterResourcesAuraTimer" .. localPx
     if not auraFonts[name] then
         local f = CreateFont(name)
         local path = GameFontNormalSmall:GetFont()
-        f:SetFont(path, px, "OUTLINE")
+        f:SetFont(path, localPx, "OUTLINE")
         auraFonts[name] = true
     end
     return name
@@ -244,7 +192,7 @@ end
 local function LayoutAuras(b, L, overlap, D, healthOnLeft)
     local a = ns.Cfg(b.unit).auras
     local size = math.max(8, math.floor(D * a.sizeRatio + 0.5))
-    local timerPx = size * 0.40 * a.timerScale
+    local timerPx = size * a.timerScale
     local countPx = math.max(7, math.floor(size * 0.45 * a.countScale + 0.5))
     for name, set in pairs(b.auraSets) do
         local bar = (name == "debuffs") and b.health or b.power
@@ -322,10 +270,15 @@ local function MakeNativeAuraButton(button, harmful, set, block)
     end
 end
 
+-- Reapply fonts when the font size may have changed in the options.
+local function ReapplyNativeAuraFonts(b)
+
+end
+
 function ns.UpdateAuras(b)
     -- updated to always use the alt method.
     local cfg = ns.Cfg(b.unit).auras
-    if not cfg.enabled then --or not cfg.altMethod then
+    if not cfg.enabled then
         if b.altAuras then
             for _, native in pairs(b.altAuras) do
                 if native and native.Hide then pcall(native.Hide, native) end
@@ -391,7 +344,7 @@ function ns.UpdateAuras(b)
             if not ok then
                 native:Hide()
                 native._crReady = false
-                ns.Print("Alternative aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                ns.Print("Native aura method failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
                 return false
             end
             native._crReady = true
@@ -433,7 +386,7 @@ function ns.UpdateAuras(b)
             if not ok then
                 native:Hide()
                 native._crReady = false
-                ns.Print("Alternative aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
+                ns.Print("Native aura method update failed for " .. b.unit .. " " .. name .. ": " .. tostring(err))
                 return false
             end
 
@@ -443,11 +396,28 @@ function ns.UpdateAuras(b)
         end
     end
 
+    -- Update aura fonts?
     for _, name in ipairs({ "debuffs", "buffs" }) do
+        local set = b.auraSets[name]
         local native = b.altAuras and b.altAuras[name]
-        if native and native:IsShown() then
-            return
+        if native and native.GetAuraButtons then
+            local buttons = native:GetAuraButtons()
+            if buttons then
+                for _, button in ipairs(buttons) do
+                    if button and button.Cooldown and button.Cooldown.SetCountdownFont then
+                        button.Cooldown:SetHideCountdownNumbers((set.timerPx or 12) < 7.5)
+                        pcall(button.Cooldown.SetCountdownFont, button.Cooldown, GetAuraFont(set.timerPx or 12))
+                    end
+                    if button and button.Count then
+                        local font = button.Count:GetFont() or GameFontNormalSmall:GetFont()
+                        button.Count:SetFont(font, set.countPx or 10, "OUTLINE")
+                    end
+                end
+            end
         end
+        --if native and native:IsShown() then
+        --    return
+        --end
     end
 end
 
@@ -597,7 +567,7 @@ function ns.DescribeAuraState()
     for _, unit in ipairs(ns.UNITS) do
         local b = ns.blocks and ns.blocks[unit]
         local cfg = b and ns.Cfg(unit).auras or nil
-        lines[#lines + 1] = "unit=" .. unit .. " altMethod=" .. S(cfg and cfg.altMethod) .. " enabled=" .. S(cfg and cfg.enabled)
+        lines[#lines + 1] = "unit=" .. unit .. " enabled=" .. S(cfg and cfg.enabled)
         if not b then
             lines[#lines + 1] = "  no block created"
         else
