@@ -30,7 +30,7 @@ local ART = {
     borderColor   = { 1.00, 0.82, 0.00, 1 },    -- Blizzard-style gold
     showBorder   = false,                -- portrait_border.tga hidden; set true to bring it back
     backingColor = { 0, 0, 0, 0.6 },     -- black backing circle, same opacity as the bar backdrops
-    backingPad   = 5,                    -- extra pixels of black around the portrait edge    
+    backingPad   = 4,                    -- extra pixels of black around the portrait edge    
 }
 
 -- Faction emblems drawn ON TOP of the coloured Pip.tga disc.
@@ -171,35 +171,35 @@ function ns.AnchorTooltip(b)
     GameTooltip:SetOwner(b.root, "ANCHOR_RIGHT")
 end
 
-local function MakeAuraIcon(parent, block)
-    local f = CreateFrame("Frame", nil, parent)
-    f.block = block
+-- local function MakeAuraIcon(parent, block)
+--     local f = CreateFrame("Frame", nil, parent)
+--     f.block = block
 
-    -- Hover for the tooltip, but let every click fall through to whatever is underneath.
-    f:EnableMouse(true)
-    if f.SetPropagateMouseClicks then
-        pcall(f.SetPropagateMouseClicks, f, true)
-    elseif f.SetPassThroughButtons then
-        pcall(f.SetPassThroughButtons, f, "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5")
-    end
+--     -- Hover for the tooltip, but let every click fall through to whatever is underneath.
+--     f:EnableMouse(true)
+--     if f.SetPropagateMouseClicks then
+--         pcall(f.SetPropagateMouseClicks, f, true)
+--     elseif f.SetPassThroughButtons then
+--         pcall(f.SetPassThroughButtons, f, "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5")
+--     end
 
-    f.border = f:CreateTexture(nil, "BACKGROUND")
-    f.border:SetPoint("TOPLEFT", -1, 1)
-    f.border:SetPoint("BOTTOMRIGHT", 1, -1)
-    f.border:SetColorTexture(1, 1, 1, 1)
-    f.tex = f:CreateTexture(nil, "ARTWORK")
-    f.tex:SetAllPoints()
-    f.tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    f.cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
-    f.cd:SetAllPoints()
-    f.cd:SetDrawEdge(false)
-    local over = CreateFrame("Frame", nil, f)
-    over:SetAllPoints()
-    over:SetFrameLevel(f.cd:GetFrameLevel() + 2)
-    f.count = MakeText(over, 10)
-    f.count:SetPoint("BOTTOMRIGHT", 2, -1)
-    return f
-end
+--     f.border = f:CreateTexture(nil, "BACKGROUND")
+--     f.border:SetPoint("TOPLEFT", -1, 1)
+--     f.border:SetPoint("BOTTOMRIGHT", 1, -1)
+--     f.border:SetColorTexture(1, 1, 1, 1)
+--     f.tex = f:CreateTexture(nil, "ARTWORK")
+--     f.tex:SetAllPoints()
+--     f.tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+--     f.cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
+--     f.cd:SetAllPoints()
+--     f.cd:SetDrawEdge(false)
+--     local over = CreateFrame("Frame", nil, f)
+--     over:SetAllPoints()
+--     over:SetFrameLevel(f.cd:GetFrameLevel() + 2)
+--     f.count = MakeText(over, 10)
+--     f.count:SetPoint("BOTTOMRIGHT", 2, -1)
+--     return f
+-- end
 
 local auraFonts = {}
 local function GetAuraFont(px)
@@ -227,7 +227,6 @@ local function PositionIcon(set, i)
     end
     local font = icon.count:GetFont()
     icon.count:SetFont(font, set.countPx, "OUTLINE")
-
 
     -- Hide the swipe timer.
     --icon.cd:SetDrawSwipe(false)             -- no dark radial sweep
@@ -945,7 +944,7 @@ local function LayoutBlock(b)
     Place(b.resting, -45, nil)                                  -- "zZz": no background or border
     Place(b.marker,  90,  s * 1.0, 1.05)
     if b.happyPip then
-        local x, y = Badge(b.happyPip, b.happyFace, -45, 1.0)
+        local x, y = Badge(b.happyPip, b.happyFace, -30, 1.0, 0.6)
         b.happyHit:ClearAllPoints()
         b.happyHit:SetPoint("CENTER", root, "CENTER", x, y)
         b.happyHit:SetSize(B, B)

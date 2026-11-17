@@ -16,3 +16,5 @@ I can't stress enough that this was written by AI and you can tell.  The AddOn i
 
 # Screenshot
 ![Player and target frames](Screenshots/Player_and_Target.png)
+
+![Player and target frames](Screenshots/Player_and_Pet.png)
