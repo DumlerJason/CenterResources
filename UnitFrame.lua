@@ -11,6 +11,58 @@ local PVP_COLORS = {
     default  = { 0.80, 0.80, 0.80 },
 }
 
+-- Portrait artwork. All four files are 256x256 with a transparent margin around the shape
+-- (room for a future glow). Insets are in texels of the 256 canvas.
+local ART = {
+    size        = 256,
+    ringInset   = 16,   -- portrait_ring.tga: transparent margin on each side
+    borderInset = 12,   -- portrait_border.tga: transparent margin on each side
+    -- Which inset should land exactly on the portrait diameter D (portraitSize)? Using the
+    -- border's means the outer edge of the frame sits on D, which is where the status badges
+    -- are placed. All files share one canvas size, so they stay aligned with each other.
+    fitInset    = 12,
+    ring   = "portrait_ring",
+    border = "portrait_border",
+    mask   = "portrait_mask",
+    portraitScale = 0.92,                       -- portrait + mask + backdrop size vs. the canvas (smaller = more of the frame shows)
+    portraitZoom  = 1.10,   -- 1.0 = whole portrait image, 1.2 = zoomed in 20% (crops the edges)
+    portraitShift = 0.05,   -- + moves the image DOWN inside the frame, - moves it up (fraction of the image height)
+    borderColor   = { 1.00, 0.82, 0.00, 1 },    -- Blizzard-style gold
+    showBorder   = false,                -- portrait_border.tga hidden; set true to bring it back
+    backingColor = { 0, 0, 0, 0.6 },     -- black backing circle, same opacity as the bar backdrops
+    backingPad   = 5,                    -- extra pixels of black around the portrait edge    
+}
+
+-- Faction emblems drawn ON TOP of the coloured Pip.tga disc.
+local PVP_ICONS = {
+    Horde    = "Interface\\TargetingFrame\\UI-PVP-Horde",
+    Alliance = "Interface\\TargetingFrame\\UI-PVP-Alliance",
+    FFA      = "Interface\\TargetingFrame\\UI-PVP-FFA",
+}
+local PVP_TC = { 0, 0.609375, 0, 0.640625 }
+
+-- Status badge ("pip") artwork. Both files are 64x64 with a transparent margin; insets in texels.
+local PIP = {
+    size        = 64,
+    bgInset     = 18,   -- pip_background.tga margin
+    borderInset = 12,   -- pip_border.tga margin
+    fitInset    = 12,   -- the border's outer edge defines the badge diameter
+    bg     = "pip_background",
+    border = "pip_border",
+    borderColor = ART.borderColor,
+}
+-- how big the background disc is relative to the badge's outer (border) diameter
+PIP.discRatio = (PIP.size - 2 * PIP.bgInset) / (PIP.size - 2 * PIP.fitInset)
+
+-- Background colour (r, g, b, a) of every badge except PvP (which is faction-coloured).
+local BADGE_BG = { 0, 0, 0, 0.85 }
+
+-- Show/hide a badge's background and its border together.
+local function ShowBadge(bg, shown)
+    bg:SetShown(shown)
+    if bg.border then bg.border:SetShown(shown) end
+end
+
 -- Secondary resource per class (generic: shows only if the class has one and the client reports a max).
 local SECONDARY = {
     ROGUE = "ComboPoints", DRUID = "ComboPoints", PALADIN = "HolyPower",
@@ -175,22 +227,14 @@ local function PositionIcon(set, i)
     end
     local font = icon.count:GetFont()
     icon.count:SetFont(font, set.countPx, "OUTLINE")
-    icon.cd:SetHideCountdownNumbers(set.timerPx < 7.5)
-    pcall(icon.cd.SetCountdownFont, icon.cd, GetAuraFont(set.timerPx))
-end
 
--- The happiness icon sits below the power bar, not above it.
-function ns.PositionHappy(b)
-    local set = b.auraSets.buffs
-    local h = b.happy
-    if not h or not set.size then return end
-    h:SetSize(set.size, set.size)
-    h:ClearAllPoints()
-    if set.onLeft then
-        h:SetPoint("TOPRIGHT", b.power, "BOTTOMRIGHT", 0, -3)
-    else
-        h:SetPoint("TOPLEFT", b.power, "BOTTOMLEFT", 0, -3)
-    end
+
+    -- Hide the swipe timer.
+    --icon.cd:SetDrawSwipe(false)             -- no dark radial sweep
+    --icon.cd:SetDrawBling(false)             -- no finish flash
+    --icon.cd:SetHideCountdownNumbers(true)   -- main cooldown keeps swipe only
+
+    pcall(icon.cd.SetCountdownFont, icon.cd, GetAuraFont(set.timerPx))
 end
 
 -- Sizes scale with the portrait size, so smaller frames (pet, focus) get smaller icons.
@@ -217,7 +261,6 @@ local function LayoutAuras(b, L, overlap, D, healthOnLeft)
         
         for i = 1, #set.icons do PositionIcon(set, i) end
     end
-    if b.happy then ns.PositionHappy(b) end
 end
 
 local function MakeNativeAuraButton(button, harmful, set, block)
@@ -243,10 +286,27 @@ local function MakeNativeAuraButton(button, harmful, set, block)
     cd:SetAllPoints()
     button.Cooldown = cd
     button:SetDurationCooldown(cd)
-    if set then
-        cd:SetHideCountdownNumbers((set.timerPx or size) < 7.5)
-        if cd.SetCountdownFont then pcall(cd.SetCountdownFont, cd, GetAuraFont(set.timerPx or size)) end
-    end
+
+    -- No dark radial swipe, no edge line, no finish flash.
+    cd:SetDrawSwipe(false)
+    cd:SetDrawEdge(false)
+    cd:SetDrawBling(false)
+
+    -- Timer text ABOVE the icon. The engine feeds this Cooldown and draws its countdown number
+    -- centred on the Cooldown frame. With the swipe off, the frame's size only affects where
+    -- the text sits, so move/resize the frame to be a strip sitting on top of the icon.
+    local timerH = math.max(8, math.floor((set and set.timerPx or size * 0.5) + 4))
+    cd:ClearAllPoints()
+    cd:SetPoint("BOTTOMLEFT", button, "TOPLEFT", -4, 1)
+    cd:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 4, 1)
+    cd:SetHeight(timerH)
+    cd:SetFrameLevel(button:GetFrameLevel() + 3)
+    if cd.EnableMouse then cd:EnableMouse(false) end
+
+    -- Set to true to hide the timer text completely.
+    local HIDE_TIMER_TEXT = false
+    cd:SetHideCountdownNumbers(HIDE_TIMER_TEXT or (set and (set.timerPx or size) < 7.5) or false)
+    if cd.SetCountdownFont then pcall(cd.SetCountdownFont, cd, GetAuraFont(set and set.timerPx or size)) end
 
     local count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     count:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -400,8 +460,9 @@ end
 
 ------------------------------------------------------------
 -- Pet happiness (WoW Forever: three states, exact value is restricted)
--- Preferred: Blizzard's own happiness icon in the FIRST buff slot.
--- Fallback:  a coloured pip beside the portrait, like the PvP flag.
+-- Shown as a badge on the portrait edge (like the PvP flag): a mood-coloured disc (Pip.tga)
+-- with Blizzard's happiness face on top. If the face texture is missing, the coloured disc
+-- alone still shows the mood.
 ------------------------------------------------------------
 local HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness"
 local HAPPY_COORDS = {
@@ -485,36 +546,22 @@ function ns.ShowHappinessTooltip(b)
 end
 
 function ns.UpdateHappiness(b)
-    if b.unit ~= "pet" or not b.happy then return end
-    local mode = ns.Cfg("pet").happiness
-    local h = ReadHappiness()
-    local style = mode
-    if mode == "auto" then style = HappyIconUsable() and "icon" or "pip" end
-
-    local showIcon = (h and style == "icon") and true or false
-    local showPip  = (h and style == "pip") and true or false
-
-    if showIcon then
-        local c, m = HAPPY_COORDS[h], MOOD[h]
-        b.happy.tex:SetTexCoord(c[1], c[2], c[3], c[4])
-        b.happy.border:SetVertexColor(m[2], m[3], m[4], 1)
-        ns.PositionHappy(b)
-        b.happy:Show()
+    if b.unit ~= "pet" or not b.happyPip then return end
+    local h = (ns.Cfg("pet").happiness ~= "off") and ReadHappiness() or nil
+    if h then
+        local c = HAPPY_COORDS[h]
+        ShowBadge(b.happyPip, true)
+        if HappyIconUsable() then
+            b.happyFace:SetTexCoord(c[1], c[2], c[3], c[4])
+            b.happyFace:Show()
+        else
+            b.happyFace:Hide()
+        end
+        b.happyHit:Show()
     else
-        b.happy:Hide()
-    end
-    if showPip then
-        local m = MOOD[h]
-        b.happyPip:SetVertexColor(m[2], m[3], m[4])
-        b.happyPip:Show()
-    else
-        b.happyPip:Hide()
-    end
-
-    -- the buff row shifts by one slot while the icon is shown
-    if b.happyIcon ~= showIcon then
-        b.happyIcon = showIcon
-        ns.UpdateAuras(b)
+        ShowBadge(b.happyPip, false)
+        b.happyFace:Hide()
+        b.happyHit:Hide()
     end
 end
 
@@ -607,21 +654,22 @@ local function CreateBlock(unit)
     pf:SetFrameLevel(lvl + 3)
     b.portraitFrame = pf
 
-    b.disk = pf:CreateTexture(nil, "BACKGROUND")
-    b.disk:SetAllPoints()
-    b.disk:SetTexture(ns.TEX .. "Mask")
-    b.disk:SetVertexColor(0, 0, 0, 0.65)
+    -- Every portrait layer is sized in LayoutBlock to the same 256-style canvas, centred on pf.
+    b.disk = pf:CreateTexture(nil, "BACKGROUND")           -- dark backdrop behind the portrait
+    b.disk:SetTexture(ns.TEX .. ART.mask)
+    b.disk:SetVertexColor(unpack(ART.backingColor))
 
-    b.portrait = pf:CreateTexture(nil, "ARTWORK")
-    b.portrait:SetAllPoints()
-    local mask = pf:CreateMaskTexture()
-    mask:SetAllPoints()
-    mask:SetTexture(ns.TEX .. "Mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    b.portrait:AddMaskTexture(mask)
+    b.portrait = pf:CreateTexture(nil, "ARTWORK")          -- the 3D/2D portrait, under the frame
+    b.portraitMask = pf:CreateMaskTexture()
+    b.portraitMask:SetTexture(ns.TEX .. ART.mask, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    b.portrait:AddMaskTexture(b.portraitMask)
 
-    b.ring = pf:CreateTexture(nil, "OVERLAY")
-    b.ring:SetAllPoints()
-    b.ring:SetTexture(ns.TEX .. "Ring")
+    b.ring = pf:CreateTexture(nil, "OVERLAY", nil, 1)      -- class/reaction coloured ring
+    b.ring:SetTexture(ns.TEX .. ART.ring)
+
+    b.border = pf:CreateTexture(nil, "OVERLAY", nil, 2)    -- bevelled border, on top of the ring
+    b.border:SetTexture(ns.TEX .. ART.border)
+    b.border:SetVertexColor(unpack(ART.borderColor))       -- gold; the greyscale bevel survives the tint
 
     -- status icons
     local icons = CreateFrame("Frame", nil, root)
@@ -629,14 +677,35 @@ local function CreateBlock(unit)
     icons:SetFrameLevel(lvl + 6)
     b.iconFrame = icons
 
-    b.pvp = icons:CreateTexture(nil, "OVERLAY")
-    b.pvp:SetTexture(ns.TEX .. "Pip")
+    -- Draw order inside the icon frame: backgrounds at OVERLAY sublevel 0, icons/text at 2-3,
+    -- so an icon always renders ON TOP of its background disc.
+    -- A badge = background (pip_background, sublevel 0) + icon (2-3) + border (pip_border, 4).
+    -- The border is stored on the background as bg.border and shown/hidden with ShowBadge().
+    local function BadgeBG(col)
+        local c = col or BADGE_BG
+        local t = icons:CreateTexture(nil, "OVERLAY", nil, 0)
+        t:SetTexture(ns.TEX .. PIP.bg)
+        t:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+        t:Hide()
+        t.border = icons:CreateTexture(nil, "OVERLAY", nil, 4)
+        t.border:SetTexture(ns.TEX .. PIP.border)
+        t.border:SetVertexColor(unpack(PIP.borderColor))
+        t.border:Hide()
+        return t
+    end
 
-    b.combat = icons:CreateTexture(nil, "OVERLAY")
+    -- PvP: b.pvp is the faction-coloured disc (Pip.tga); b.pvpIcon is the emblem on top of it.
+    b.pvp = BadgeBG()
+    b.pvpIcon = icons:CreateTexture(nil, "OVERLAY", nil, 2)
+    b.pvpIcon:Hide()
+
+    b.combatBG = BadgeBG()
+    b.combat = icons:CreateTexture(nil, "OVERLAY", nil, 2)
     b.combat:SetTexture("Interface\\CharacterFrame\\UI-StateIcon")
     b.combat:SetTexCoord(0.5, 1, 0, 0.484375)
 
-    b.leader = icons:CreateTexture(nil, "OVERLAY")
+    b.leaderBG = BadgeBG()
+    b.leader = icons:CreateTexture(nil, "OVERLAY", nil, 2)
     b.leader:SetTexture("Interface\\GroupFrame\\UI-Group-LeaderIcon")
 
     b.marker = icons:CreateTexture(nil, "OVERLAY")
@@ -645,8 +714,11 @@ local function CreateBlock(unit)
     b.resting = MakeText(icons, 14)
     b.resting:SetText("zZz")
     b.resting:SetTextColor(0.6, 0.8, 1)
+    b.resting:SetDrawLayer("OVERLAY", 3)
 
+    b.levelBG = BadgeBG()
     b.level = MakeText(icons, 12)
+    b.level:SetDrawLayer("OVERLAY", 3)
     b.name  = MakeText(icons, 12)
 
     -- secondary resource row (player only)
@@ -667,14 +739,32 @@ local function CreateBlock(unit)
     end
 
     if unit == "pet" then
-        b.happy = MakeAuraIcon(b.auraSets.buffs.container, b)
-        b.happy.tex:SetTexture(HAPPY_TEX)
-        b.happy:SetScript("OnEnter", function() ns.ShowHappinessTooltip(b) end)
-        b.happy:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        b.happy:Hide()
-        b.happyPip = icons:CreateTexture(nil, "OVERLAY")
-        b.happyPip:SetTexture(ns.TEX .. "Pip")
-        b.happyPip:Hide()
+        b.happyPip = BadgeBG()                                   -- mood-coloured disc
+        b.happyFace = icons:CreateTexture(nil, "OVERLAY", nil, 2) -- face, drawn on top of the disc
+        b.happyFace:SetTexture(HAPPY_TEX)
+        -- Draw the face untinted. (Tinting it dark turned the whole square cell black, because
+        -- the happiness texture has no transparent background.) A circle mask trims the square
+        -- cell so only a round face sits on the coloured disc.
+        b.happyFace:SetVertexColor(1, 1, 1, 1)
+        local fmask = icons:CreateMaskTexture()
+        fmask:SetAllPoints(b.happyFace)
+        fmask:SetTexture(ns.TEX .. "Mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        b.happyFace:AddMaskTexture(fmask)
+        b.happyFace:Hide()
+
+        -- invisible hover area for the tooltip; clicks fall through to the unit frame
+        local hit = CreateFrame("Frame", nil, icons)
+        hit:SetFrameLevel(icons:GetFrameLevel() + 2)
+        hit:EnableMouse(true)
+        if hit.SetPropagateMouseClicks then
+            pcall(hit.SetPropagateMouseClicks, hit, true)
+        elseif hit.SetPassThroughButtons then
+            pcall(hit.SetPassThroughButtons, hit, "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5")
+        end
+        hit:SetScript("OnEnter", function() ns.ShowHappinessTooltip(b) end)
+        hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        hit:Hide()
+        b.happyHit = hit
     end
 
     -- unlock overlay
@@ -807,6 +897,19 @@ local function LayoutBlock(b)
 
     b.ring:SetShown(g.showRing)
 
+    -- portrait artwork: scale the 256 canvas so the chosen inset lands on the portrait diameter
+    local S = D * ART.size / (ART.size - 2 * ART.fitInset)
+    local function Fit(t, size)
+        t:ClearAllPoints()
+        t:SetPoint("CENTER", b.portraitFrame, "CENTER", 0, 0)
+        t:SetSize(size, size)
+    end
+    for _, t in ipairs({ b.ring, b.border }) do Fit(t, S) end
+    -- portrait, its mask and the dark backdrop shrink together so the mask edge stays aligned
+    for _, t in ipairs({ b.portrait, b.portraitMask }) do Fit(t, S * ART.portraitScale) end
+    Fit(b.disk, S * ART.portraitScale + 2 * ART.backingPad)   -- a little larger than the portrait, like the bar backdrops
+    b.border:SetShown(ART.showBorder)
+
     -- icons around the portrait
     b.iconFrame:SetShown(c.showIcons)
     local s = math.max(10, D * 0.26)
@@ -816,13 +919,37 @@ local function LayoutBlock(b)
         obj:SetPoint("CENTER", root, "CENTER", math.cos(rad) * R * (push or 1), math.sin(rad) * R * (push or 1))
         if size then obj:SetSize(size, size) end
     end
-    Place(b.pvp,     45,  s * 0.7)
-    Place(b.combat,  135, s * 1.1)
-    Place(b.leader, -135, s * 0.9)
+    -- Badge = background + icon + border, all centred on the same point of the portrait edge.
+    local B    = math.max(24, s * 1.5)                          -- outer (border) diameter
+    local C    = B * PIP.size / (PIP.size - 2 * PIP.fitInset)   -- size of the 64-style canvas
+    local disc = B * PIP.discRatio                              -- visible background diameter
+    -- iconScale: icon size as a fraction of the disc (ignored for text).
+    -- badgeScale: shrinks/grows only the background + border, never the contents.
+    local function Badge(bg, obj, deg, iconScale, badgeScale)
+        local rad = math.rad(deg)
+        local x, y = math.cos(rad) * R, math.sin(rad) * R
+        for _, t in ipairs({ bg, bg.border }) do
+            t:ClearAllPoints()
+            t:SetPoint("CENTER", root, "CENTER", x, y)
+            t:SetSize(C * (badgeScale or 1), C * (badgeScale or 1))
+        end
+        obj:ClearAllPoints()
+        obj:SetPoint("CENTER", root, "CENTER", x, y)
+        if iconScale then obj:SetSize(disc * iconScale, disc * iconScale) end   -- unaffected by badgeScale
+        return x, y
+    end
+    Badge(b.pvp,       b.pvpIcon,  45,  1.0, 0.6)
+    Badge(b.combatBG,  b.combat,   135, 1.0, 0.6)
+    Badge(b.leaderBG,  b.leader,  -135, 1.0, 0.6)
+    Badge(b.levelBG,   b.level,   -90, nil, 0.6)               -- text keeps its font size; badge is 75%
+    Place(b.resting, -45, nil)                                  -- "zZz": no background or border
     Place(b.marker,  90,  s * 1.0, 1.05)
-    Place(b.resting, -45, nil)
-    Place(b.level,  -90,  nil, 1.0)
-    if b.happyPip then Place(b.happyPip, -45, s * 0.7) end
+    if b.happyPip then
+        local x, y = Badge(b.happyPip, b.happyFace, -45, 1.0)
+        b.happyHit:ClearAllPoints()
+        b.happyHit:SetPoint("CENTER", root, "CENTER", x, y)
+        b.happyHit:SetSize(B, B)
+    end
 
     b.name:ClearAllPoints()
     b.name:SetPoint("TOP", b.health, "BOTTOM", 0, -2)
@@ -902,6 +1029,13 @@ end
 function ns.UpdatePortrait(b)
     local unit = b.unit
     SetPortraitTexture(b.portrait, UnitExists(unit) and unit or "player")
+    -- Choose which part of the portrait image shows through the mask. The window can't leave the
+    -- image, so shifting needs some zoom (portraitZoom > 1) to have anywhere to move.
+    do
+        local h  = 0.5 / ART.portraitZoom
+        local cy = math.max(h, math.min(1 - h, 0.5 - ART.portraitShift))
+        b.portrait:SetTexCoord(0.5 - h, 0.5 + h, cy - h, cy + h)
+    end
     b.portrait:SetDesaturated(UnitExists(unit) and UnitIsDeadOrGhost(unit) and true or false)
 end
 
@@ -909,8 +1043,10 @@ function ns.UpdateInfo(b)
     local unit = b.unit
     if not UnitExists(unit) then
         b.name:SetText(""); b.level:SetText("")
+        ShowBadge(b.levelBG, false)
         return
     end
+    ShowBadge(b.levelBG, true)
     b.name:SetText(UnitName(unit) or "")
     local lvl = UnitLevel(unit)
     if lvl and lvl > 0 then b.level:SetText(lvl) else b.level:SetText("??") end
@@ -921,22 +1057,35 @@ function ns.UpdateIcons(b)
     local exists = UnitExists(unit)
 
     -- PvP pip
-    local col
+    local col, iconPath
     if exists and UnitIsPVPFreeForAll(unit) then
-        col = PVP_COLORS.FFA
+        col, iconPath = PVP_COLORS.FFA, PVP_ICONS.FFA
     elseif exists and UnitIsPVP(unit) then
-        col = PVP_COLORS[UnitFactionGroup(unit) or ""] or PVP_COLORS.default
+        local fac = UnitFactionGroup(unit) or ""
+        col, iconPath = PVP_COLORS[fac] or PVP_COLORS.default, PVP_ICONS[fac]
     end
     if col then
-        b.pvp:SetVertexColor(col[1], col[2], col[3])
-        b.pvp:Show()
+        b.pvp:SetVertexColor(col[1], col[2], col[3])   -- the only coloured badge background
+        ShowBadge(b.pvp, true)
+        if iconPath then
+            b.pvpIcon:SetTexture(iconPath)
+            b.pvpIcon:SetTexCoord(unpack(PVP_TC))
+            b.pvpIcon:SetDesaturated(true)   -- light grey emblem stays visible on a same-colour disc
+            b.pvpIcon:Show()
+        else
+            b.pvpIcon:Hide()
+        end
     else
-        b.pvp:Hide()
+        ShowBadge(b.pvp, false)
+        b.pvpIcon:Hide()
     end
 
-    b.combat:SetShown(exists and UnitAffectingCombat(unit) and true or false)
-    b.resting:SetShown(unit == "player" and IsResting() and true or false)
-    b.leader:SetShown(exists and UnitIsGroupLeader(unit) and true or false)
+    local inCombat = exists and UnitAffectingCombat(unit) and true or false
+    b.combat:SetShown(inCombat);  ShowBadge(b.combatBG, inCombat)
+    local resting = unit == "player" and IsResting() and true or false
+    b.resting:SetShown(resting)
+    local leader = exists and UnitIsGroupLeader(unit) and true or false
+    b.leader:SetShown(leader);  ShowBadge(b.leaderBG, leader)
 
     local idx = exists and GetRaidTargetIndex(unit)
     if idx then

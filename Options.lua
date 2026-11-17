@@ -223,9 +223,8 @@ local function BuildUnitTab(content, unit)
     P(NewSlider(p1, "Bar overlap under portrait (%)", 0, 20, 1, g, s, "%"), p1, 1, 5)
     if unit == "pet" then
         P(NewCycle(p1, "Pet happiness indicator",
-            { { "auto", "Automatic" }, { "icon", "Icon in first buff slot" },
-              { "pip", "Pip beside portrait" }, { "off", "Off" } },
-            function() return C().happiness end,
+            { { "auto", "Badge on portrait" }, { "off", "Off" } },
+            function() return (C().happiness == "off") and "off" or "auto" end,
             function(v) C().happiness = v; ns.Refresh() end), p1, 0, 5)
     end
     Note(p1)
