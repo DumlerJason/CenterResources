@@ -171,36 +171,6 @@ function ns.AnchorTooltip(b)
     GameTooltip:SetOwner(b.root, "ANCHOR_RIGHT")
 end
 
--- local function MakeAuraIcon(parent, block)
---     local f = CreateFrame("Frame", nil, parent)
---     f.block = block
-
---     -- Hover for the tooltip, but let every click fall through to whatever is underneath.
---     f:EnableMouse(true)
---     if f.SetPropagateMouseClicks then
---         pcall(f.SetPropagateMouseClicks, f, true)
---     elseif f.SetPassThroughButtons then
---         pcall(f.SetPassThroughButtons, f, "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5")
---     end
-
---     f.border = f:CreateTexture(nil, "BACKGROUND")
---     f.border:SetPoint("TOPLEFT", -1, 1)
---     f.border:SetPoint("BOTTOMRIGHT", 1, -1)
---     f.border:SetColorTexture(1, 1, 1, 1)
---     f.tex = f:CreateTexture(nil, "ARTWORK")
---     f.tex:SetAllPoints()
---     f.tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
---     f.cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
---     f.cd:SetAllPoints()
---     f.cd:SetDrawEdge(false)
---     local over = CreateFrame("Frame", nil, f)
---     over:SetAllPoints()
---     over:SetFrameLevel(f.cd:GetFrameLevel() + 2)
---     f.count = MakeText(over, 10)
---     f.count:SetPoint("BOTTOMRIGHT", 2, -1)
---     return f
--- end
-
 local auraFonts = {}
 local function GetAuraFont(px)
     local localPx = math.max(6, math.floor(px + 0.5))
@@ -242,7 +212,7 @@ local function LayoutAuras(b, L, overlap, D, healthOnLeft)
     local size = math.max(8, math.floor(D * a.sizeRatio + 0.5))
 
     -- lock timer font to 50% and counter font to 40% of size
-    local timerPx = size * 0.5 --a.timerScale
+    local timerPx = size * 0.4 --a.timerScale
     local countPx = math.max(7, math.floor(size * 0.4 )) --* a.countScale + 0.5))
     for name, set in pairs(b.auraSets) do
         local bar = (name == "debuffs") and b.health or b.power
@@ -260,6 +230,44 @@ local function LayoutAuras(b, L, overlap, D, healthOnLeft)
         
         for i = 1, #set.icons do PositionIcon(set, i) end
     end
+end
+
+-- Detailed aura timer text, kept to at most 3 characters:
+--   60 seconds or under  -> seconds  ("45")
+--   up to 99 minutes     -> minutes  ("79m")
+--   up to 99 hours       -> hours    ("12h")
+--   over 99 hours        -> days     ("5d")
+-- The engine's Cooldown countdown numbers accept a NumericFormatter (SetCountdownFormatter).
+-- The input is remaining SECONDS. Each breakpoint below applies from its `threshold` upward, and
+-- the highest threshold that fits wins. The tiny +0.001 makes the boundary exclusive, so exactly
+-- 60s is still "60" and exactly 99m is still "99m".
+-- `step` + rounding Up rounds the value up to the next whole unit first; `div` then converts
+-- seconds into that unit (60 = minutes, 3600 = hours, 86400 = days).
+local MINUTES_FROM = 60 + 0.001            -- over 60 seconds
+local HOURS_FROM   = 99 * 60 + 0.001       -- over 99 minutes
+local DAYS_FROM    = 99 * 3600 + 0.001     -- over 99 hours
+
+local auraTimeFormatter, auraTimeFormatterTried
+local function GetAuraTimeFormatter()
+    if auraTimeFormatterTried then return auraTimeFormatter end
+    auraTimeFormatterTried = true
+    if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then return nil end
+    local up = Enum and Enum.NumericRuleFormatRounding and Enum.NumericRuleFormatRounding.Up or 1
+    local ok, f = pcall(function()
+        local fmt = C_StringUtil.CreateNumericRuleFormatter()
+        fmt:SetBreakpoints({
+            { threshold = 0,            step = 1,    rounding = up, format = "%ds" },
+            { threshold = MINUTES_FROM, step = 60,   rounding = up, format = "%dm",
+              components = { { div = 60 } } },
+            { threshold = HOURS_FROM,   step = 3600, rounding = up, format = "%dh",
+              components = { { div = 3600 } } },
+            { threshold = DAYS_FROM,    step = 86400, rounding = up, format = "%dd",
+              components = { { div = 86400 } } },
+        })
+        return fmt
+    end)
+    if ok then auraTimeFormatter = f else ns.Print("Aura time formatter failed: " .. tostring(f)) end
+    return auraTimeFormatter
 end
 
 local function MakeNativeAuraButton(button, harmful, set, block)
@@ -306,6 +314,11 @@ local function MakeNativeAuraButton(button, harmful, set, block)
     local HIDE_TIMER_TEXT = false
     cd:SetHideCountdownNumbers(HIDE_TIMER_TEXT or (set and (set.timerPx or size) < 7.5) or false)
     if cd.SetCountdownFont then pcall(cd.SetCountdownFont, cd, GetAuraFont(set and set.timerPx or size)) end
+    if cd.SetCountdownFormatter then
+        local fmt = GetAuraTimeFormatter()
+        if fmt then pcall(cd.SetCountdownFormatter, cd, fmt) end
+    end
+
 
     local count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     count:SetPoint("BOTTOMRIGHT", -1, 1)
