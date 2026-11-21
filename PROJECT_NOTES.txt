@@ -6,10 +6,15 @@ Purpose of this file: if you start a NEW chat with Claude, upload the zip and sa
 needed to continue should be here: what the addon is, how it is built, what the user
 wants, what has been verified in game, and what is still open.
 
-Current version: 2.5.2  (see CenterResources.toc)
-BUILD NOTE: 2.5.2 = the 2.5.1 code (pet happiness fixed for Forever, original aura code) with the
-2.6.0 engine-drawn-aura experiment REMOVED, because in 2.6.0 auras stopped displaying on all custom
-frames. See section 13 for the exact test history.
+Current version: 2.5.3  (see CenterResources.toc)
+BUILD NOTE (2.5.3): the LIVE aura path is now the engine's native AuraContainer (ns.UpdateAuras
+always uses it; the old icon-by-icon code is dead). Aura timer text is the engine's own Cooldown
+countdown, formatted by a custom NumericRuleFormatter (section 5, "Aura timer text"). A
+Target of Target frame was added (section 5). See section 13 for the test history.
+
+WORKING-COPY RULE: the user edits files by hand too. Whatever .lua files the user uploads in a
+chat are the CURRENT/LIVE versions - base all further changes on those, never on an older copy.
+(In the chat that produced these notes, the user's uploaded UnitFrame.lua replaced Claude's copy.)
 WoW addon folder name: CenterResources   (must match the .toc file name)
 Install path: <WoW Forever>/_forever_/Interface/AddOns/CenterResources/
 
@@ -18,8 +23,8 @@ Install path: <WoW Forever>/_forever_/Interface/AddOns/CenterResources/
 ------------------------------------------------------------------------------
 A minimal, centre-of-screen unit frame set for WoW: Forever. Each frame is a round
 portrait with horizontal health (one side) and power (other side) bars. Frames exist
-for PLAYER, TARGET, PET and FOCUS. Status icons orbit the portrait; buffs and debuffs
-are drawn as a single row of icons above the bars.
+for PLAYER, TARGET, TARGETTARGET ("Target of Target", sized like focus), PET and FOCUS. Status
+icons orbit the portrait; buffs and debuffs are drawn as a single row of icons above the bars.
 
 It began as a replacement for "NotoriousR UI" (whose saved variables did not load
 reliably) and grew into a full custom unit-frame addon.
@@ -33,7 +38,7 @@ Layout of one frame (player, default, not mirrored):
  - Portrait: circular (mask texture), clickable. Left click = target, right click =
    unit menu ("togglemenu"). Works in combat (it is a secure unit button).
  - Health/power bars: NOT clickable. Health fills outward from the portrait.
- - "Mirror" swaps the sides (health on the right). Target and focus default to mirrored.
+ - "Mirror" swaps the sides (health on the right). Target, target of target and focus default to mirrored.
 
 ------------------------------------------------------------------------------
 2. THE USER'S ENVIRONMENT AND PREFERENCES
@@ -56,12 +61,18 @@ Design preferences stated by the user (keep honouring these):
   * Frames are NOT movable from inside Edit Mode (for now); they move with /cr unlock.
   * Bars are never clickable. Portrait is clickable. Auras are never clickable.
   * Debuffs go over the HEALTH bar, buffs over the POWER bar, one single row each, allowed
-    to run longer than the bar. Icon size scales with the frame (pet/focus are smaller).
+    to run longer than the bar. Icon size scales with the frame (pet/focus/ToT are smaller).
   * Aura tooltips appear at the SAME location as the unit frame's own tooltip
     (anchored to the portrait, ANCHOR_RIGHT), not at the icon.
-  * Aura timer text was too large -> default timer text scale is 90%.
-  * Pet happiness: use Blizzard's happiness icon in the FIRST BUFF SLOT if it can be used
-    directly; otherwise show a coloured pip beside the portrait like the PvP flag.
+  * Aura timer text: placed ABOVE each icon; font size is locked to 40% of the icon size and the
+    stack count to 40% (the Timer/Stack size sliders are commented out in Options.lua).
+  * Aura timers must be at most 3 characters, in the form 45s / 79m / 12h / 5d (section 5).
+  * Pet happiness: shown as a badge on the portrait edge (mood-coloured disc + Blizzard's happiness
+    face), like the PvP flag. (The earlier "first buff slot" idea was dropped.)
+  * Target of Target: works like the other frames, sized like focus/pet, driven by a 0.1s timer
+    instead of unit events (the user prefers "timer only" over "events plus timer").
+  * Be candid about what is unverified: Claude cannot run WoW. Say "untested" rather than asserting
+    how the client behaves, and give the user a /run or /dump line to check when unsure.
   * Auras Blizzard does not display need not be shown (for now).
   * Aura WHITELIST/BLACKLIST is wanted LATER; the user has not decided the design yet.
   * NEXT planned feature: combat-entry glow and threat-change glow (user is deciding
@@ -72,15 +83,18 @@ Design preferences stated by the user (keep honouring these):
 ------------------------------------------------------------------------------
 CenterResources.toc   Interface 16001, SavedVariables: CenterResourcesDB,
                       load order: Core.lua, UnitFrame.lua, Options.lua, Main.lua
+                      (Version 2.5.3.)
 Core.lua              Shared namespace (ns), DEFAULTS, CopyDefaults, Print, Safe (pcall wrapper
                       that records errors), Edit Mode layout detection (ns.UpdateLayoutKey),
                       per-layout settings accessor ns.Cfg(unit) / ns.GetPos(unit).
 UnitFrame.lua         Everything visual: block (frame) creation, layout, updates for health,
-                      power, portrait, icons, secondary pips, auras, pet happiness,
-                      hiding Blizzard's default frames, refresh/combat deferral.
+                      power, portrait, icons, secondary pips, auras (native AuraContainer +
+                      the aura time formatter), pet happiness, hiding Blizzard's default
+                      frames, refresh/combat deferral. ns.UNITS lists the frames.
 Options.lua           Settings panel (own widgets built from plain frames/textures, no
                       Blizzard templates). Registers with the Settings API.
-Main.lua              Event frame, event handlers, slash commands, safety ticker.
+Main.lua              Event frame, event handlers, slash commands, tickers (pet happiness
+                      every 2s; target of target every 0.1s).
 Textures/             Mask.tga, Ring.tga, Pip.tga, Bar.tga (+ README.txt). Generated
                       placeholders; the user may replace them with their own TGAs.
 PROJECT_NOTES.txt     This file (ignored by WoW).
@@ -102,9 +116,9 @@ CenterResourcesDB = {
     locked, healthColor ("green"|"class"), barStyle ("smooth"|"flat"),
     textMode ("percent"|"value"|"both"|"none"), showRing, idleAlpha, combatAlpha,
     secondaryEnabled, secondarySize },
-  units = { player|target|pet|focus = <template> },  -- default template; seeds new layouts
+  units = { player|target|targettarget|pet|focus = <template> },  -- default template; seeds new layouts
   layouts = {                      -- PER EDIT MODE LAYOUT (key = layout name)
-    ["Modern"] = { player = <cfg>, target = <cfg>, pet = <cfg>, focus = <cfg> }, ... },
+    ["Modern"] = { player = <cfg>, target = <cfg>, targettarget = <cfg>, pet = <cfg>, focus = <cfg> }, ... },
   layoutPos = {...},               -- legacy v2.1 positions; read once to migrate, then ignored
 }
 
@@ -114,12 +128,14 @@ CenterResourcesDB = {
   health bar), showIcons, mirror, pos = {x, y} (offset of portrait centre from screen
   centre, in UIParent units, scale-independent),
   auras = { enabled, maxCount (per row, default 10), sizeRatio (icon size as fraction of
-            portrait size, default 0.4), spacing (px, default 2), timerScale (0.9),
-            countScale (0.9) },
-  pet only: happiness = "auto" | "icon" | "pip" | "off".
+            portrait size, default 0.4), spacing (px, default 2),
+            altMethod (legacy flag, unused: the native path is always used),
+            timerScale / countScale (stored but UNUSED: sizes are now locked at 40% of icon) },
+  pet only: happiness = "auto" | "off" (the options panel only offers these two).
 
 Defaults: player portrait 64, bars 190x18, pos (0,-190) | target 56, 170x16, mirrored,
-name shown, pos (0,200) | pet scale 0.9, 40, 120x12, pos (-440,-190) | focus scale 0.9,
+name shown, pos (0,200) | targettarget scale 0.9, 40, 120x12, mirrored, name shown,
+pos (440,200) | pet scale 0.5 (Core.lua default), 40, 120x12, pos (-440,-190) | focus scale 0.9,
 40, 120x12, mirrored, name shown, pos (440,-190).
 
 Edit Mode layout handling (Core.lua):
@@ -131,11 +147,25 @@ Edit Mode layout handling (Core.lua):
     time is seeded from the PREVIOUS layout's settings (or the template / v2.1 data).
 
 ------------------------------------------------------------------------------
-5. FEATURES (what exists in v2.5.0)
+5. FEATURES (what exists in v2.5.3)
 ------------------------------------------------------------------------------
 Frames
-  - Player, Target, Pet, Focus. Target/pet/focus use RegisterUnitWatch (show/hide with the
-    unit even in combat). Each can be disabled, scaled, resized, mirrored, per layout.
+  - Player, Target, Target of Target, Pet, Focus. All but the player use RegisterUnitWatch
+    (show/hide with the unit even in combat). Each can be disabled, scaled, resized, mirrored,
+    per layout.
+  - TARGET OF TARGET (unit token "targettarget", secure button CenterResources_targettarget):
+    built by the same CreateBlock code as the others; defaults = focus size, pos (440,200),
+    mirrored; its own "ToT" tab in the options; overlay label "Target of Target - drag to move"
+    (ns.UNIT_LABELS); Blizzard frame to hide = "TargetFrameToT" (NAME ASSUMED, not yet verified).
+    It has NO unit-event registration. Main.lua runs a 0.1s C_Timer ticker that, while the frame
+    is shown, calls UpdateColors/Health/Power/Portrait/Info/Icons. Auras are NOT in the ticker
+    (a full aura update tears the container down and would flicker); they rely on the native
+    container tracking "targettarget" plus the OnShow -> UpdateBlock refresh.
+    UNVERIFIED: whether auras refresh when the ToT switches directly to another unit without
+    the frame hiding; whether unit events fire for "targettarget" at all (user chose not to
+    investigate; a possible check is
+    /run local f=CreateFrame("Frame");f:RegisterUnitEvent("UNIT_HEALTH","targettarget");
+    f:SetScript("OnEvent",function(_,e,u) print(e,u) end) ).
   - Bar text inside bars: percent / value / both / none (global).
   - Health colour: green or class/reaction colour (global). Portrait ring tinted by
     class/reaction colour. Dead/ghost -> portrait desaturated.
@@ -149,44 +179,63 @@ Secondary resource row (player only, below portrait)
   - Generic: shows pips for the class's secondary resource if the client reports one
     (combo points, holy power, soul shards, chi, arcane charges, essence). Hunter: none.
   - Pips are tiny StatusBars (secret-safe: SetMinMaxValues(i-1,i), SetValue(cur)).
-Auras (buffs/debuffs)
-  - Debuffs over the health bar, buffs over the power bar, ONE row each, growing outward
-    from the portrait side. Per layout: show on/off, icon size (% of portrait), spacing,
-    max icons per row, timer text size %, stack text size %.
-  - Each icon: texture, cooldown swipe + countdown number (hidden if tiny), stack count,
-    border (debuffs coloured by dispel type via a colour curve; fallback red; buffs black).
-  - Icons are mouse-enabled ONLY to show tooltips; clicks pass through
-    (SetPropagateMouseClicks / SetPassThroughButtons). Tooltip via
-    GameTooltip:SetUnitBuffByAuraInstanceID / SetUnitDebuffByAuraInstanceID, anchored to
-    the unit frame (ns.AnchorTooltip).
-  - Auras are read icon by icon (C_UnitAuras.GetUnitAuras, fallback GetUnitAuraInstanceIDs, then
-    GetAuraDataByAuraInstanceID; icon via SetTexture, cooldown via GetAuraDuration +
-    SetCooldownFromDurationObject, stacks via GetAuraApplicationDisplayCount). CONFIRMED by the
-    user on Forever: this shows buffs/debuffs on the TARGET both in and out of combat (2.4.0, 2.5.0).
-    Do not replace this path; any alternative must be opt-in (see section 13).
-Pet happiness (pet frame, v2.5)
+Auras (buffs/debuffs) - NATIVE AURACONTAINER PATH (live in 2.5.3)
+  - ns.UpdateAuras (UnitFrame.lua) ALWAYS uses the engine's widget: per block and per set
+    ("debuffs", "buffs") it creates CreateFrame("AuraContainer", nil, b.root,
+    "CustomAuraContainerTemplate"), calls AddAuraGroup(name, filter, {maxFrameCount, layout =
+    {elementWidth/Height/Spacing...}, initializeFrame = MakeNativeAuraButton}), then SetUnit(unit),
+    UpdateAllAuras(), SetFlowLayoutGrowthDirection(dirX, 1), and Show/Hide with UnitExists.
+    Failures are pcall'd and printed with ns.Print. The old icon-by-icon code (set.icons,
+    PositionIcon) is dead code now; set.icons stays empty. /cr auras reports container state.
+  - Layout: debuffs over the health bar, buffs over the power bar, ONE row each, growing outward
+    from the portrait side. Per layout options: show on/off, icon size (% of portrait), spacing,
+    max icons per row. (Timer/stack text sliders are removed; sizes are locked at 40% of icon.)
+  - MakeNativeAuraButton builds each button: Icon texture, a Cooldown frame (SetDurationCooldown)
+    with swipe/edge/bling OFF, the countdown number drawn by the engine in a strip ABOVE the icon,
+    an application-count FontString (SetApplicationCount), and a border texture coloured by
+    SetDispelTypeTexture (harmful: debuff-type border, helpful: helpful border).
+  - Tooltips and click-through of aura icons were part of the OLD path; with the native container
+    the engine handles the buttons. Do not assume the old tooltip code is active.
+  - CONFIRMED by the user: auras display on custom frames with engine countdown text.
+
+Aura timer text (3 characters max: 45s / 79m / 12h / 5d)
+  - The countdown number is the engine's Cooldown text. It is formatted by a shared
+    NumericRuleFormatter (GetAuraTimeFormatter in UnitFrame.lua, above MakeNativeAuraButton),
+    attached with cd:SetCountdownFormatter(fmt) inside MakeNativeAuraButton (pcall-guarded).
+  - API facts (warcraft.wiki.gg, Midnight 12.0.5+, listed for Forever 1.60.1):
+    C_StringUtil.CreateNumericRuleFormatter() -> formatter; formatter:SetBreakpoints({...}).
+    Each breakpoint = { threshold (min input, in SECONDS), step, rounding (Enum.NumericRuleFormat
+    Rounding: 0 Nearest, 1 Up, 2 Down), min, max, format (string with %d), components = { {div,
+    mod, step, rounding} } }. Highest threshold <= value wins. formatter:FormatNumber(n) tests it.
+  - Current rules: <=60s "%ds"; >60s up to 99m "%dm" (step 60 Up, div 60); >99m up to 99h "%dh";
+    >99h "%dd". Constants MINUTES_FROM/HOURS_FROM/DAYS_FROM = boundary + 0.001 so the boundaries
+    are exclusive. Everything rounds UP (just over 99m shows "2h").
+  - REJECTED: Cooldown:SetCountdownAbbrevThreshold - it only switches between "1:31" style and
+    abbreviated style; it cannot make the abbreviated text more detailed.
+  - NOT YET CONFIRMED IN GAME: that the formatter shows 79m/12h/5d as intended (user changed the
+    seconds rule to "%ds" and the timer font to 40% himself, so it was at least running).
+Pet happiness (pet frame, v2.5; badge version)
   - API (CONFIRMED by user + other Forever addons): the classic global GetPetHappiness does
     NOT exist on Forever. Use C_PetInfo.GetPetHappiness() -> plain 1-3 (1 unhappy, 2 content,
     3 happy), then damage % and loyalty rate. Event: UNIT_HAPPINESS. The exact happiness
     number (Enum.PowerType.Happiness = 27, max ~1050) is a SECRET value via UnitPower, so only
     the three states are available. The user's /cr pet reported the icon texture as usable,
     and the happiness indicator was CONFIRMED WORKING by the user (2.6.0 test, same happiness code).
-  - Mode "auto": use Blizzard's happiness icon (Interface\PetPaperDollFrame\UI-PetHappiness,
-    texcoords per state) in the FIRST buff slot (real buffs shift one slot right/outward),
-    with a mood-coloured border and a tooltip (state, damage %, loyalty). If the texture
-    cannot be found (checked with GetFileIDFromPath) it falls back to a coloured pip beside
-    the portrait (bottom-right, like the PvP pip). "icon"/"pip"/"off" force a choice.
+  - Mode "auto": a badge on the portrait edge (like the PvP flag): mood-coloured disc (Pip.tga)
+    with Blizzard's happiness face (Interface\PetPaperDollFrame\UI-PetHappiness, texcoords per
+    state, circle-masked) on top, plus a hover tooltip (state, damage %, loyalty). If the face
+    texture is missing (checked with GetFileIDFromPath) only the coloured disc shows. "off" hides it.
   - Updated on UNIT_HAPPINESS, PET_UI_UPDATE, UNIT_PET and a 2-second ticker.
 Hiding Blizzard's default frames (per layout, per unit)
-  - PlayerFrame/TargetFrame/PetFrame/FocusFrame: alpha 0 + huge SetHitRectInsets, plus a
+  - PlayerFrame/TargetFrame/TargetFrameToT/PetFrame/FocusFrame: alpha 0 + huge SetHitRectInsets, plus a
     hooksecurefunc on SetAlpha to keep it at 0. No moving/re-parenting (avoids taint).
     Turning it off restores alpha 1 and the hit rect. Hiding the Blizzard target frame also
     hides the buffs it displays (ours replace them).
 Moving frames
-  - /cr unlock shows green boxes; drag any frame; /cr lock. Target/pet/focus show as
+  - /cr unlock shows green boxes; drag any frame; /cr lock. Target/ToT/pet/focus show as
     previews while unlocked. Position saved per layout on drag stop.
 Settings panel (/cr)
-  - Tabs: General | Player | Target | Pet | Focus. Unit tabs have two pages: Frame / Auras.
+  - Tabs: General | Player | Target | ToT | Pet | Focus. Unit tabs have two pages: Frame / Auras.
   - Built with custom sliders/checkboxes/cycle buttons (right-click cycles backwards).
 Combat handling
   - Protected frames cannot be resized/moved in combat. ns.Refresh() queues changes
@@ -199,6 +248,7 @@ Combat handling
 /cr or /centerres   open the settings panel
 /cr unlock | lock   move frames / lock them
 /cr layout          print the current Edit Mode layout name
+/cr auras           diagnostics: AuraContainer state per unit
 /cr pet             diagnostics: what C_PetInfo.GetPetHappiness() returns, texture usable?
 /cr errors          print the last error caught by ns.Safe (errors are hidden, not spammed)
 /cr reset           reset ALL settings (also available in the General tab)
@@ -234,7 +284,7 @@ a non-round portrait (not implemented; the simple "bars start at the ring" appro
 - Options UI uses only plain frames/textures + a few safe built-in fonts: no Blizzard
   widget templates (they change between clients).
 - Bump "## Version" in the .toc for every delivered build.
-- When adding a per-frame option: add it to ns.DEFAULTS.units.* (all four units),
+- When adding a per-frame option: add it to ns.DEFAULTS.units.* (all five units: player, target, targettarget, pet, focus),
   read it via ns.Cfg(), apply it in LayoutBlock / the relevant Update function, add a
   control in Options.lua (BuildUnitTab), and make sure existing saves pick it up
   (CopyDefaults does this automatically).
@@ -245,6 +295,7 @@ Update flow (UnitFrame.lua):
   ns.UpdateBlock() -> UpdateColors, UpdateHealth, UpdatePower, UpdatePortrait, UpdateInfo,
                       UpdateIcons, UpdateSecondary, UpdateHappiness, UpdateAuras
   Unit events (Main.lua) call the individual Update* functions for the matching block.
+  (Target of target is the exception: no unit events, a 0.1s ticker instead - see section 5.)
 
 Frame levels inside a block (root = secure button, size = portrait): bars +1,
 secondary row +2, aura containers +2, portrait frame +3 (disc, portrait, ring), icon frame
@@ -255,6 +306,7 @@ secondary row +2, aura containers +2, portrait frame +3 (disc, portrait, ring), 
 ------------------------------------------------------------------------------
 - Edit the .lua files in a working copy of the CenterResources folder (small python
   replace patches with assert-exactly-once checks work well).
+- Aura/format APIs: check warcraft.wiki.gg (Widget API / ScriptObject pages) before using them.
 - Syntax check every file: `pip install lupa --break-system-packages`, then load each file
   with Lua `load()` (Lua 5.5 in lupa; only syntax is verified, not WoW behaviour).
 - Logic tests with stubbed WoW globals have been used for Core.lua (layout switching,
@@ -274,11 +326,14 @@ left/right click and the unit menu, target/pet blocks, status icons, the setting
 per-layout positions, focus frame, buffs/debuffs display and border colours, aura sizing
 (timer text was too large -> fixed by default 90%), the bar-overlap fix (v2.4 "looks good").
 
-NOT yet confirmed (v2.4/2.5 additions and uncertain APIs - ask the user how they behave):
-  - Aura timer font actually honouring the "Timer text size" slider
-    (uses Cooldown:SetCountdownFont with generated font objects).
-  - Click-through of aura icons (clicks near icons must still reach the world).
-  - Aura tooltips (SetUnitBuff/DebuffByAuraInstanceID) and their placement.
+Also confirmed: native AuraContainer auras display with engine countdown text on the custom frames.
+
+NOT yet confirmed (uncertain APIs - ask the user how they behave):
+  - The aura time formatter output (79m / 12h / 5d, rounding up, boundaries at 60s/99m/99h).
+  - Target of Target frame: appears/clears with the target's target; health/power follow via the
+    0.1s ticker; auras update on a ToT switch; "Hide Blizzard's default frame" really hides
+    "TargetFrameToT"; the ToT tab fits (6 tabs x 96px = 576px in a 580px panel).
+  - Aura tooltips and click-through under the native container.
   - Pet happiness: works, but confirm the FACE shown matches the mood (texcoords are Classic's:
     happy 0-0.1875, content 0.1875-0.375, unhappy 0.375-0.5625).
   - Edit Mode layout NAME detection (/cr layout should print a real name, not "default").
@@ -298,6 +353,10 @@ Next (user is deciding the look):
     "Forever Essentials" has a threat meter and unit-frame threat borders on Forever, so
     threat data is probably readable (maybe only the status 0-3, not exact numbers).
 Later:
+  * If ToT auras do not refresh on a direct switch: cheaper aura refresh on the ticker
+    (e.g. native:UpdateAllAuras() only) or a full aura update only on OnShow/target change.
+  * If the 0.1s ToT ticker is ever wanted as events instead: first check which unit token the
+    events arrive with (see the /run check in section 5).
   * Aura whitelist/blacklist (design undecided: per class / per character / global; by spell
     name or spell ID; note some aura fields are secret in combat, so matching may be limited).
   * Optional: show auras Blizzard hides; aura sorting/priorities; dispellable highlight.
@@ -318,7 +377,10 @@ Later:
 2.5  Pet happiness indicator (icon in first buff slot, pip fallback); /cr pet diagnostics.
 2.5.1 Pet happiness now reads C_PetInfo.GetPetHappiness (the classic global does not exist on Forever).
 2.6.0 (REMOVED) Engine-drawn auras via AuraContainer: auras stopped displaying on all custom frames.
-2.5.2 THIS BUILD = 2.5.1 code with 2.6.0 removed (pet happiness working, original auras working).
+2.5.2 = 2.5.1 code with 2.6.0 removed (pet happiness working, original auras working).
+2.5.3 THIS BUILD: native AuraContainer auras are the live path (engine countdown text above the
+      icon, locked 40% font); custom aura time formatter (45s/79m/12h/5d); Target of Target frame
+      (focus-sized, 0.1s timer, no events, ToT options tab); pet happiness badge on the portrait.
 
 ------------------------------------------------------------------------------
 13. TEST HISTORY AND RESEARCH NOTES (read before touching auras or happiness)
@@ -334,10 +396,16 @@ What the user actually observed (this is the ground truth; research below is sec
   An early mistaken theory (that Forever blocks addon reads of hostile/combat auras) was NOT borne
   out for this addon's code path. Do not "fix" auras based on it.
 
+  2.5.3  The user later switched ns.UpdateAuras to ALWAYS use the native container (comment in the
+         code: "updated to always use the alt method") and it DISPLAYS auras with engine timers.
+         So the 2.6.0 failure was a problem of that earlier implementation, not of the widget.
+         The timer text then came out as "2h" (engine default abbreviation), which led to the
+         custom NumericRuleFormatter (section 5). SetCountdownAbbrevThreshold was tried and
+         rejected (it only toggles "1:31" style vs abbreviated).
+
 Rules that follow from this:
-  * Never replace the working aura code. If the native container is tried again, make it an
-    opt-in setting (default OFF), keep the old path as the default, verify the container draws
-    something before trusting it, and add a diagnostic command.
+  * Do not replace the working aura code without a fallback. The native container is now the
+    live path: change it in small steps, keep pcall guards, and use /cr auras to diagnose.
   * Add happiness-like features as separate modules; test auras after each step.
 
 Forever API facts (web research + user testing):
@@ -345,12 +413,17 @@ Forever API facts (web research + user testing):
     plain 1-3 (1 unhappy, 2 content, 3 happy), then damage % and loyalty rate. Event
     UNIT_HAPPINESS. Exact value (Enum.PowerType.Happiness = 27, max ~1050) is a SECRET value.
     Icon texture Interface\PetPaperDollFrame\UI-PetHappiness exists in the client.
-  * The client has a native aura widget (not used in this build): CreateFrame("AuraContainer", nil,
+  * The client has a native aura widget (USED in 2.5.3): CreateFrame("AuraContainer", nil,
     parent, "CustomAuraContainerTemplate"); AddAuraGroup(key, "HELPFUL"|"HARMFUL", {maxFrameCount,
     initializeFrame}); SetUnit(unit); UpdateAuras via UpdateAllAuras(); layout via SetAuraGroupLayout
     ({elementWidth, elementHeight, elementSpacing}), SetFlowLayout* (values from AnchorUtil.FlowDirection,
     key names not confirmed). Other authors report it can draw auras even when addon reads are
     blocked, and that AddAuraGroup threw for Plater on Forever 1.60.1 with some option tables.
+  * Cooldown countdown formatting: Cooldown:SetCountdownFormatter(NumericFormatter) exists since
+    Midnight 12.0.5; formatters come from C_StringUtil.CreateNumericRuleFormatter (section 5).
+    Cooldown:SetCountdownAbbrevThreshold exists but is not useful for this.
+  * Unit events for "targettarget": UNKNOWN (not tested). Blizzard's own ToT frame has historically
+    refreshed on a timer; hence the timer-only design.
   * Threat: EllesmereUI's "Forever Essentials" has a threat meter/borders on Forever, so some threat
     information is readable (verify before building the glows).
 ==============================================================================

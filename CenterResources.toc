@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: CenterResources
-## Notes: Round portrait unit frames with horizontal health/power bars for player, target and pet.
+## Notes: Round portrait unit frames with horizontal health/power bars for player, target, target of target, pet and focus.
 ## Author: You
 ## Version: 2.5.3
 ## SavedVariables: CenterResourcesDB

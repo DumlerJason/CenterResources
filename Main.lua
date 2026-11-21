@@ -32,14 +32,7 @@ handlers.UNIT_FACTION       = ForUnit(function(b) ns.UpdateIcons(b); ns.UpdateCo
 handlers.UNIT_FLAGS         = ForUnit(ns.UpdateIcons)
 handlers.UNIT_AURA          = ForUnit(ns.UpdateAuras)
 
-handlers.PLAYER_TARGET_CHANGED = function()
-    if ns.blocks.target then ns.UpdateBlock(ns.blocks.target) end
-    if ns.blocks.targettarget then ns.UpdateBlock(ns.blocks.targettarget) end
-end
--- Fires (unit = "target") when the target switches ITS target, i.e. the target of target changed.
-handlers.UNIT_TARGET = function(unit)
-    if ns.blocks.targettarget then ns.UpdateBlock(ns.blocks.targettarget) end
-end
+handlers.PLAYER_TARGET_CHANGED = function() if ns.blocks.target then ns.UpdateBlock(ns.blocks.target) end end
 handlers.PLAYER_FOCUS_CHANGED  = function() if ns.blocks.focus then ns.UpdateBlock(ns.blocks.focus) end end
 handlers.UNIT_HAPPINESS        = function() if ns.blocks.pet then ns.Safe(ns.UpdateHappiness, ns.blocks.pet) end end
 handlers.PET_UI_UPDATE         = handlers.UNIT_HAPPINESS
@@ -101,23 +94,27 @@ function handlers.ADDON_LOADED(name)
         if pb and pb.root:IsShown() then ns.Safe(ns.UpdateHappiness, pb) end
     end)
 
-    -- The target of target has no reliable per-unit events for health/power, so refresh those two
-    -- on a short ticker while that frame is shown (cheap: two bar updates).
-    C_Timer.NewTicker(0.2, function()
+    -- The target of target frame is driven ONLY by this timer (no unit events). Every 0.1s, while
+    -- the frame is shown, it re-reads everything except auras. Auras are drawn by the engine's
+    -- own aura container, which is set up when the frame shows (OnShow -> UpdateBlock).
+    C_Timer.NewTicker(0.1, function()
         local tb = ns.blocks.targettarget
         if tb and tb.root:IsShown() then
+            ns.Safe(ns.UpdateColors, tb)
             ns.Safe(ns.UpdateHealth, tb)
             ns.Safe(ns.UpdatePower, tb)
+            ns.Safe(ns.UpdatePortrait, tb)
+            ns.Safe(ns.UpdateInfo, tb)
+            ns.Safe(ns.UpdateIcons, tb)
         end
     end)
 
     for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
         "UNIT_DISPLAYPOWER", "UNIT_PORTRAIT_UPDATE", "UNIT_MODEL_CHANGED", "UNIT_LEVEL",
         "UNIT_NAME_UPDATE", "UNIT_FACTION", "UNIT_FLAGS", "UNIT_AURA" }) do
-        RegU(e, "player", "target", "targettarget", "pet", "focus")
+        RegU(e, "player", "target", "pet", "focus")
     end
     RegU("UNIT_PET", "player")
-    RegU("UNIT_TARGET", "target")
     for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_TARGET_CHANGED", "PLAYER_REGEN_DISABLED",
         "PLAYER_REGEN_ENABLED", "PLAYER_FOCUS_CHANGED", "UNIT_HAPPINESS", "PET_UI_UPDATE", "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_UPDATE_RESTING", "PARTY_LEADER_CHANGED", "GROUP_ROSTER_UPDATE",
         "RAID_TARGET_UPDATE", "PLAYER_FLAGS_CHANGED", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST" }) do
