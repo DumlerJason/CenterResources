@@ -336,8 +336,8 @@ function ns.BuildOptions()
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     sub:SetText("Texture files live in Interface/AddOns/CenterResources/Textures (see README.txt). Restart the game after changing them.")
 
-    local tabNames = { "General", "Player", "Target", "Pet", "Focus" }
-    local tabKeys  = { nil, "player", "target", "pet", "focus" }
+    local tabNames = { "General", "Player", "Target", "ToT", "Pet", "Focus" }
+    local tabKeys  = { nil, "player", "target", "targettarget", "pet", "focus" }
     local tabs = {}
 
     local function Select(i)

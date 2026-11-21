@@ -26,6 +26,8 @@ ns.DEFAULTS = {
                    showName = true,  showIcons = true, mirror = true,  pos = { x = 0,    y = 200  } },
         pet    = { enabled = true, happiness = "auto", hideDefault = false, auras = { enabled = true, altMethod = false, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.9, countScale = 0.4 }, scale = 0.5, portraitSize = 40, barLength = 120, barOverlap = 4, barHeight = 12,
                    showName = false, showIcons = true, mirror = false, pos = { x = -440, y = -190 } },
+        targettarget = { enabled = true, hideDefault = false, auras = { enabled = true, altMethod = false, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.5, countScale = 0.4 }, scale = 0.9, portraitSize = 40, barLength = 120, barOverlap = 4, barHeight = 12,
+                   showName = true,  showIcons = true, mirror = true,  pos = { x = 440,  y = 200  } },
         focus  = { enabled = true, hideDefault = false, auras = { enabled = true, altMethod = false, maxCount = 10, sizeRatio = 0.4, spacing = 2, timerScale = 0.5, countScale = 0.4 }, scale = 0.9, portraitSize = 40, barLength = 120, barOverlap = 4, barHeight = 12,
                    showName = true,  showIcons = true, mirror = true,  pos = { x = 440,  y = -190 } },
     },

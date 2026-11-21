@@ -2,7 +2,9 @@ local ADDON, ns = ...
 
 ns.blocks = {}
 local blocks = ns.blocks
-ns.UNITS = { "player", "target", "pet", "focus" }
+ns.UNITS = { "player", "target", "targettarget", "pet", "focus" }
+-- Names shown on the unlock overlay (anything not listed is just the capitalised unit token).
+ns.UNIT_LABELS = { targettarget = "Target of Target" }
 
 local PVP_COLORS = {
     Horde    = { 0.85, 0.15, 0.15 },
@@ -206,7 +208,7 @@ local function PositionIcon(set, i)
     pcall(icon.cd.SetCountdownFont, icon.cd, GetAuraFont(set.timerPx))
 end
 
--- Sizes scale with the portrait size, so smaller frames (pet, focus) get smaller icons.
+-- Sizes scale with the portrait size, so smaller frames (pet, focus, target of target) get smaller icons.
 local function LayoutAuras(b, L, overlap, D, healthOnLeft)
     local a = ns.Cfg(b.unit).auras
     local size = math.max(8, math.floor(D * a.sizeRatio + 0.5))
@@ -494,6 +496,7 @@ local happyTexOK
 local BLIZZ = {
                 player = "PlayerFrame",
                 target = "TargetFrame",
+                targettarget = "TargetFrameToT",
                 pet = "PetFrame",
                 focus = "FocusFrame"
             }
@@ -787,7 +790,7 @@ local function CreateBlock(unit)
     ot:SetColorTexture(0.2, 1, 0.2, 0.18)
     ov.label = MakeText(ov, 12)
     ov.label:SetPoint("TOP", 0, -2)
-    ov.label:SetText(unit:sub(1, 1):upper() .. unit:sub(2) .. " - drag to move")
+    ov.label:SetText((ns.UNIT_LABELS[unit] or (unit:sub(1, 1):upper() .. unit:sub(2))) .. " - drag to move")
     ov:Hide()
     b.overlay = ov
 
