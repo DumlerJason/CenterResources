@@ -291,6 +291,10 @@ local function BuildGeneralTab(content)
         function() return G().secondarySize end,
         function(v) G().secondarySize = v; ns.Refresh() end), content, 1, 3)
 
+    Place(NewCheck(content, "Hide Blizzard buff/debuff bars",
+        function() return G().hideAuraBars end,
+        function(v) G().hideAuraBars = v; ns.Refresh() end), content, 0, 5)
+
     local armed = false
     local btn = NewButton(content, "Reset ALL settings", 170, function(self)
         if not armed then
@@ -310,7 +314,7 @@ local function BuildGeneralTab(content)
 
     local lf = CreateFrame("Frame", nil, content)
     lf:SetSize(560, 20)
-    lf:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -5 * ROW_H)
+    lf:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -6 * ROW_H)
     local lt = lf:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     lt:SetPoint("LEFT")
     function lf:Refresh()

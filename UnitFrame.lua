@@ -349,6 +349,11 @@ local function MakeNativeAuraButton(button, harmful, set, block)
             style = Enum.CustomAuraButtonDispelTypeTextureStyle.Border,
         })
     end
+
+    -- Enable cancelling auras.
+    if block and block.unit == "player" and not harmful and button.SetCancelAuraButtons then
+        pcall(button.SetCancelAuraButtons, button, "RightButtonDown")
+    end
 end
 
 function ns.UpdateAuras(b)
@@ -1054,6 +1059,49 @@ function ns.UpdatePortrait(b)
     b.portrait:SetDesaturated(UnitExists(unit) and UnitIsDeadOrGhost(unit) and true or false)
 end
 
+-- Level number colour:
+--   attackable (enemy) units -> by level difference to the player: grey / green / yellow / red
+--   friendly players of the player's own faction -> blue
+--   everything else (friendly NPCs, pets...) -> white
+-- Blizzard's own difficulty colours have a fifth step (orange, +3/+4 levels); it is merged into red.
+local LEVEL_COLORS = {
+    grey   = { 0.60, 0.60, 0.60 },
+    green  = { 0.25, 0.85, 0.25 },
+    yellow = { 1.00, 0.90, 0.20 },
+    red    = { 1.00, 0.20, 0.20 },
+    blue   = { 0.40, 0.60, 1.00 },
+    white  = { 1.00, 1.00, 1.00 },
+}
+local RED_FROM_DIFF = 3   -- this many levels above the player (or "??") -> red
+
+local function PickLevelColor(unit)
+    if UnitCanAttack("player", unit) then
+        local lvl, mine = UnitLevel(unit), UnitLevel("player")
+        if not (Plain(lvl) and Plain(mine)) then return LEVEL_COLORS.white end
+        if lvl <= 0 then return LEVEL_COLORS.red end          -- "??" (skull)
+        local diff = lvl - mine
+        if diff >= RED_FROM_DIFF then return LEVEL_COLORS.red end
+        if diff >= -2 then return LEVEL_COLORS.yellow end
+        local green = 8
+        if GetQuestGreenRange then
+            local ok, v = pcall(GetQuestGreenRange)
+            if ok and Plain(v) then green = v end
+        end
+        if -diff <= green then return LEVEL_COLORS.green end
+        return LEVEL_COLORS.grey
+    end
+    if UnitIsPlayer(unit) and UnitFactionGroup(unit) == UnitFactionGroup("player") then
+        return LEVEL_COLORS.blue
+    end
+    return LEVEL_COLORS.white
+end
+
+local function LevelColor(unit)
+    local ok, c = pcall(PickLevelColor, unit)   -- any restricted value -> plain white
+    c = (ok and c) or LEVEL_COLORS.white
+    return c[1], c[2], c[3]
+end
+
 function ns.UpdateInfo(b)
     local unit = b.unit
     if not UnitExists(unit) then
@@ -1065,6 +1113,7 @@ function ns.UpdateInfo(b)
     b.name:SetText(UnitName(unit) or "")
     local lvl = UnitLevel(unit)
     if lvl and lvl > 0 then b.level:SetText(lvl) else b.level:SetText("??") end
+    b.level:SetTextColor(LevelColor(unit))
 end
 
 function ns.UpdateIcons(b)
@@ -1166,10 +1215,7 @@ end
 -- Refresh (applies settings; deferred during combat)
 ------------------------------------------------------------
 -- Refers to Blizzard settings at the top of this file.
-function ns.ApplyBlizzard(unit)
-    local f = _G[BLIZZ[unit]]
-    if not f then return end
-    local hide = ns.Cfg(unit).hideDefault
+local function SetFrameHidden(f, hide)
     if hide then
         if not hooked[f] then
             hooked[f] = true
@@ -1195,6 +1241,23 @@ function ns.ApplyBlizzard(unit)
     end
 end
 
+function ns.ApplyBlizzard(unit)
+    local f = _G[BLIZZ[unit]]
+    if f then SetFrameHidden(f, ns.Cfg(unit).hideDefault) end
+end
+
+-- Blizzard's own buff / debuff / weapon-enchant bars (global option on the General tab).
+-- Same method as the unit frames: alpha 0 + a huge hit-rect inset. Frames that do not exist
+-- on this client are skipped.
+local AURA_BAR_FRAMES = { "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame" }
+function ns.ApplyAuraBars()
+    local hide = ns.DB.general.hideAuraBars and true or false
+    for _, name in ipairs(AURA_BAR_FRAMES) do
+        local f = _G[name]
+        if f then SetFrameHidden(f, hide) end
+    end
+end
+
 function ns.RefreshAll()
     local path = BarPath()
     for _, unit in ipairs(ns.UNITS) do
@@ -1209,6 +1272,7 @@ function ns.RefreshAll()
             ns.UpdateBlock(b)
         end
     end
+    ns.Safe(ns.ApplyAuraBars)
     ns.UpdateAlpha()
 end
 

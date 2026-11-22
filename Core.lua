@@ -17,6 +17,7 @@ ns.DEFAULTS = {
         combatAlpha      = 1,         -- player frame, in combat
         secondaryEnabled = true,
         secondarySize    = 12,
+        hideAuraBars     = false,     -- hide Blizzard's own buff/debuff bars
     },
     -- These are the TEMPLATE for a layout that has no settings yet (and the migration source).
     units = {
