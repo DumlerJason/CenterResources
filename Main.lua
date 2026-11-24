@@ -98,6 +98,15 @@ function handlers.ADDON_LOADED(name)
     -- the frame is shown, it re-reads everything except auras. Auras are drawn by the engine's
     -- own aura container, which is set up when the frame shows (OnShow -> UpdateBlock).
     C_Timer.NewTicker(0.1, function()
+        -- Target name/level colours depend on combat and PvP flag state, which change without a
+        -- dedicated event; refresh the target's name/level here too (cheap).
+        for _, key in ipairs({ "target", "focus" }) do
+            local fb = ns.blocks[key]
+            if fb and fb.root:IsShown() then
+                ns.Safe(ns.UpdateInfo, fb)
+                ns.Safe(ns.UpdateColors, fb)
+            end
+        end
         local tb = ns.blocks.targettarget
         if tb and tb.root:IsShown() then
             ns.Safe(ns.UpdateColors, tb)

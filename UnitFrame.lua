@@ -296,6 +296,11 @@ local function MakeNativeAuraButton(button, harmful, set, block)
     button.Cooldown = cd
     button:SetDurationCooldown(cd)
 
+    -- Enable cancelling auras.
+    if block and block.unit == "player" and not harmful and button.SetCancelAuraButtons then
+        pcall(button.SetCancelAuraButtons, button, "RightButtonDown")
+    end
+
     -- No dark radial swipe, no edge line, no finish flash.
     cd:SetDrawSwipe(false)
     cd:SetDrawEdge(false)
@@ -320,7 +325,6 @@ local function MakeNativeAuraButton(button, harmful, set, block)
         local fmt = GetAuraTimeFormatter()
         if fmt then pcall(cd.SetCountdownFormatter, cd, fmt) end
     end
-
 
     local count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     count:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -348,11 +352,6 @@ local function MakeNativeAuraButton(button, harmful, set, block)
             showWhenHarmful = false,
             style = Enum.CustomAuraButtonDispelTypeTextureStyle.Border,
         })
-    end
-
-    -- Enable cancelling auras.
-    if block and block.unit == "player" and not harmful and button.SetCancelAuraButtons then
-        pcall(button.SetCancelAuraButtons, button, "RightButtonDown")
     end
 end
 
@@ -1036,9 +1035,23 @@ end
 
 function ns.UpdateColors(b)
     local g = ns.DB.general
-    if g.healthColor == "class" then
-        b.health:SetStatusBarColor(UnitColor(b.unit))
+    local unit = b.unit
+    if unit == "target" or unit == "targettarget" or unit == "focus" then
+        -- Health bar follows the engine's selection colour (red/yellow/green/orange...).
+        local r, gg, bb
+        -- Same-faction players use the same green as the player's own bar.
+        if UnitExists(unit) and UnitIsPlayer(unit) then
+            local ok, same = pcall(function() return UnitFactionGroup(unit) == UnitFactionGroup("player") end)
+            if ok and same == true then r, gg, bb = 0.2, 0.8, 0.2 end
+        end
+        if not r and UnitExists(unit) and UnitSelectionColor then
+            local ok, cr, cg, cb = pcall(UnitSelectionColor, unit)
+            if ok and Plain(cr) and Plain(cg) and Plain(cb) then r, gg, bb = cr, cg, cb end
+        end
+        if r then b.health:SetStatusBarColor(r, gg, bb)
+        else b.health:SetStatusBarColor(0.2, 0.8, 0.2) end
     else
+        -- player and pet: always green
         b.health:SetStatusBarColor(0.2, 0.8, 0.2)
     end
     if g.showRing then
@@ -1059,46 +1072,42 @@ function ns.UpdatePortrait(b)
     b.portrait:SetDesaturated(UnitExists(unit) and UnitIsDeadOrGhost(unit) and true or false)
 end
 
--- Level number colour:
---   attackable (enemy) units -> by level difference to the player: grey / green / yellow / red
---   friendly players of the player's own faction -> blue
---   everything else (friendly NPCs, pets...) -> white
--- Blizzard's own difficulty colours have a fifth step (orange, +3/+4 levels); it is merged into red.
-local LEVEL_COLORS = {
-    grey   = { 0.60, 0.60, 0.60 },
-    green  = { 0.25, 0.85, 0.25 },
-    yellow = { 1.00, 0.90, 0.20 },
-    red    = { 1.00, 0.20, 0.20 },
-    blue   = { 0.40, 0.60, 1.00 },
-    white  = { 1.00, 1.00, 1.00 },
-}
-local RED_FROM_DIFF = 3   -- this many levels above the player (or "??") -> red
+-- ---------------------------------------------------------------------------------------------
+-- Level number colours (names are always white)
+--   TARGET, TARGET OF TARGET and FOCUS share the same rules; player and pet levels are white.
+--     attackable unit (mob or unfriendly player) ... GetQuestDifficultyColor(level)
+--     friendly NPC / friendly player ................ white
+--     unattackable, non-friendly NPC ................ UnitSelectionColor (the engine's orange)
+-- ---------------------------------------------------------------------------------------------
+local WHITE = { 1.00, 1.00, 1.00 }
 
-local function PickLevelColor(unit)
-    if UnitCanAttack("player", unit) then
-        local lvl, mine = UnitLevel(unit), UnitLevel("player")
-        if not (Plain(lvl) and Plain(mine)) then return LEVEL_COLORS.white end
-        if lvl <= 0 then return LEVEL_COLORS.red end          -- "??" (skull)
-        local diff = lvl - mine
-        if diff >= RED_FROM_DIFF then return LEVEL_COLORS.red end
-        if diff >= -2 then return LEVEL_COLORS.yellow end
-        local green = 8
-        if GetQuestGreenRange then
-            local ok, v = pcall(GetQuestGreenRange)
-            if ok and Plain(v) then green = v end
+local function DifficultyColor(unit)
+    local lvl, mine = UnitLevel(unit), UnitLevel("player")
+    if not (Plain(lvl) and Plain(mine)) then return WHITE end
+    if lvl <= 0 then lvl = mine + 10 end   -- "??" (skull) -> always red
+    if GetQuestDifficultyColor then
+        local c = GetQuestDifficultyColor(lvl)
+        if type(c) == "table" and Plain(c.r) and Plain(c.g) and Plain(c.b) then
+            return { c.r, c.g, c.b }
         end
-        if -diff <= green then return LEVEL_COLORS.green end
-        return LEVEL_COLORS.grey
     end
-    if UnitIsPlayer(unit) and UnitFactionGroup(unit) == UnitFactionGroup("player") then
-        return LEVEL_COLORS.blue
-    end
-    return LEVEL_COLORS.white
+    return WHITE
 end
 
-local function LevelColor(unit)
-    local ok, c = pcall(PickLevelColor, unit)   -- any restricted value -> plain white
-    c = (ok and c) or LEVEL_COLORS.white
+local function PickLevelColor(unit)
+    if UnitCanAttack("player", unit) then return DifficultyColor(unit) end
+    if UnitIsPlayer(unit) or UnitIsFriend("player", unit) then return WHITE end
+    -- unattackable, non-friendly NPC: use the selection colour
+    if UnitSelectionColor then
+        local r, g, b = UnitSelectionColor(unit)
+        if Plain(r) and Plain(g) and Plain(b) then return { r, g, b } end
+    end
+    return WHITE
+end
+
+local function SafeColor(fn, unit)
+    local ok, c = pcall(fn, unit)   -- any restricted value -> plain white
+    c = (ok and c) or WHITE
     return c[1], c[2], c[3]
 end
 
@@ -1113,7 +1122,13 @@ function ns.UpdateInfo(b)
     b.name:SetText(UnitName(unit) or "")
     local lvl = UnitLevel(unit)
     if lvl and lvl > 0 then b.level:SetText(lvl) else b.level:SetText("??") end
-    b.level:SetTextColor(LevelColor(unit))
+
+    b.name:SetTextColor(1, 1, 1)
+    if unit == "target" or unit == "targettarget" or unit == "focus" then
+        b.level:SetTextColor(SafeColor(PickLevelColor, unit))
+    else
+        b.level:SetTextColor(1, 1, 1)
+    end
 end
 
 function ns.UpdateIcons(b)

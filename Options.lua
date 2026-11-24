@@ -256,10 +256,9 @@ local function BuildGeneralTab(content)
         function() return G().locked end,
         function(v) G().locked = v; ns.Refresh() end), content, 0, 0)
 
-    Place(NewCycle(content, "Health bar colour",
-        { { "green", "Green" }, { "class", "Class / reaction" } },
-        function() return G().healthColor end,
-        function(v) G().healthColor = v; ns.Refresh() end), content, 0, 1)
+    Place(NewCheck(content, "Hide Blizzard buff/debuff bars",
+        function() return G().hideAuraBars end,
+        function(v) G().hideAuraBars = v; ns.Refresh() end), content, 0, 1)
 
     Place(NewCycle(content, "Bar texture",
         { { "smooth", "Smooth (Bar.tga)" }, { "flat", "Flat" } },
@@ -290,10 +289,6 @@ local function BuildGeneralTab(content)
     Place(NewSlider(content, "Secondary pip size", 6, 30, 1,
         function() return G().secondarySize end,
         function(v) G().secondarySize = v; ns.Refresh() end), content, 1, 3)
-
-    Place(NewCheck(content, "Hide Blizzard buff/debuff bars",
-        function() return G().hideAuraBars end,
-        function(v) G().hideAuraBars = v; ns.Refresh() end), content, 0, 5)
 
     local armed = false
     local btn = NewButton(content, "Reset ALL settings", 170, function(self)

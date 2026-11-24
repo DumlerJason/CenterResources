@@ -6,7 +6,7 @@ Purpose of this file: if you start a NEW chat with Claude, upload the zip and sa
 needed to continue should be here: what the addon is, how it is built, what the user
 wants, what has been verified in game, and what is still open.
 
-Current version: 2.5.4  (see CenterResources.toc)
+Current version: 2.5.7  (see CenterResources.toc)
 BUILD NOTE (2.5.3): the LIVE aura path is now the engine's native AuraContainer (ns.UpdateAuras
 always uses it; the old icon-by-icon code is dead). Aura timer text is the engine's own Cooldown
 countdown, formatted by a custom NumericRuleFormatter (section 5, "Aura timer text"). A
@@ -94,7 +94,7 @@ UnitFrame.lua         Everything visual: block (frame) creation, layout, updates
 Options.lua           Settings panel (own widgets built from plain frames/textures, no
                       Blizzard templates). Registers with the Settings API.
 Main.lua              Event frame, event handlers, slash commands, tickers (pet happiness
-                      every 2s; target of target every 0.1s).
+                      every 2s; target of target every 0.1s, which also refreshes the target's name/level colours).
 Textures/             Mask.tga, Ring.tga, Pip.tga, Bar.tga (+ README.txt). Generated
                       placeholders; the user may replace them with their own TGAs.
 PROJECT_NOTES.txt     This file (ignored by WoW).
@@ -198,12 +198,20 @@ Auras (buffs/debuffs) - NATIVE AURACONTAINER PATH (live in 2.5.3)
     scripts; the old tooltip code is dead. Right-click cancel: see the section below.
   - CONFIRMED by the user: auras display on custom frames with engine countdown text.
 
-Level number colour (UpdateInfo / PickLevelColor in UnitFrame.lua)
-  - Attackable units (UnitCanAttack): by level difference to the player: grey (below the green
-    range, GetQuestGreenRange, fallback 8), green, yellow (-2..+2), red (+3 or more, or "??").
-    Blizzard's orange step is merged into red (RED_FROM_DIFF = 3). Same-faction friendly PLAYERS:
-    blue. Everything else (friendly NPCs, pets): white. Any restricted/secret value -> white.
-    Applies to every frame. Colours live in the LEVEL_COLORS table.
+Level number, name and health colours (v2.5.6 rules; UpdateInfo, PickLevelColor, UpdateColors)
+  - NAMES: always white on every frame.
+  - LEVEL: player and pet always white. TARGET, TARGET OF TARGET and FOCUS share one rule set:
+    UnitCanAttack("player", unit) (mob or unfriendly player) -> GetQuestDifficultyColor(level)
+    ("??" level -> treated as player level + 10 = red); friendly player or UnitIsFriend NPC -> white;
+    otherwise (unattackable, non-friendly NPC) -> UnitSelectionColor (the engine's orange).
+    ASSUMPTION: players that cannot be attacked (e.g. unflagged other-faction) count as friendly -> white.
+    Any secret/restricted value -> white (SafeColor pcall).
+  - HEALTH BAR: target, targettarget, focus -> player-green if the unit is a same-faction player, else UnitSelectionColor(unit) (pcall'd, green fallback).
+    Player and pet -> green (0.2,0.8,0.2). The old General option "Health bar colour" (green/class)
+    was REMOVED from the options panel (db key general.healthColor is now unused). The portrait
+    ring still uses class/reaction colour (UnitColor) when showRing is on.
+  - Refresh: the 0.1s ticker in Main.lua refreshes UpdateInfo + UpdateColors for target and focus
+    (and the full set for target of target). UNVERIFIED in game.
 
 Hide Blizzard buff/debuff bars (General tab, GLOBAL option general.hideAuraBars, default off)
   - ns.ApplyAuraBars (called from ns.RefreshAll) hides BuffFrame, DebuffFrame and
@@ -225,9 +233,9 @@ Right-click to cancel your own buffs - WORKS via a built-in AuraButton method
         end
     block.unit is the frame's unit token ("player"...), harmful is false for the buffs container.
     Only your own cancelable buffs can be cancelled, so it only makes sense on the player frame.
-  - STATUS: the user confirmed cancelling works; this build's UnitFrame.lua in Claude's copy
-    does NOT contain the call (the user may have added it by hand). Check the user's live
-    UnitFrame.lua before adding it again. Unverified: behaviour in combat.
+  - STATUS: IMPLEMENTED in the live UnitFrame.lua (MakeNativeAuraButton, after the Cooldown setup)
+    using "RightButtonDown" (fires on press), exactly the guarded block above, and confirmed
+    working by the user. Unverified: behaviour in combat.
   - DEBUGGING LESSON: Lua errors were invisible (the user's scriptErrors was off). Ask for
     /console scriptErrors 1 and /reload before diagnosing silent failures. A call that errors
     inside an engine callback (initializeFrame) stops the rest of the button setup, which showed
@@ -413,7 +421,12 @@ Later:
 2.5.1 Pet happiness now reads C_PetInfo.GetPetHappiness (the classic global does not exist on Forever).
 2.6.0 (REMOVED) Engine-drawn auras via AuraContainer: auras stopped displaying on all custom frames.
 2.5.2 = 2.5.1 code with 2.6.0 removed (pet happiness working, original auras working).
-2.5.4 THIS BUILD = 2.5.3 + level-number colours + "Hide Blizzard buff/debuff bars" option (General tab).
+2.5.7 THIS BUILD = 2.5.6 + same-faction players get the player-green health bar on target/ToT/focus.
+2.5.6 = 2.5.5 + names always white; level colours via GetQuestDifficultyColor/UnitSelectionColor
+      for target/ToT/focus; health bars: UnitSelectionColor (target/ToT/focus), green (player/pet).
+2.5.5 = 2.5.4 + reworked level/name colour rules (see "Level number and name colours").
+2.5.4 = 2.5.3 + first level-number colours + "Hide Blizzard buff/debuff bars" option (General tab) +
+      right-click cancel of own buffs (SetCancelAuraButtons, added by the user).
 2.5.3 (previous): native AuraContainer auras are the live path (engine countdown text above the
       icon, locked 40% font); custom aura time formatter (45s/79m/12h/5d); Target of Target frame
       (focus-sized, 0.1s timer, no events, ToT options tab); pet happiness badge on the portrait.
