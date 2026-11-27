@@ -31,6 +31,8 @@ handlers.UNIT_NAME_UPDATE   = ForUnit(ns.UpdateInfo)
 handlers.UNIT_FACTION       = ForUnit(function(b) ns.UpdateIcons(b); ns.UpdateColors(b) end)
 handlers.UNIT_FLAGS         = ForUnit(ns.UpdateIcons)
 handlers.UNIT_AURA          = ForUnit(ns.UpdateAuras)
+handlers.UNIT_HEAL_PREDICTION       = ForUnit(ns.UpdatePrediction)
+handlers.UNIT_ABSORB_AMOUNT_CHANGED = ForUnit(ns.UpdatePrediction)
 
 handlers.PLAYER_TARGET_CHANGED = function() if ns.blocks.target then ns.UpdateBlock(ns.blocks.target) end end
 handlers.PLAYER_FOCUS_CHANGED  = function() if ns.blocks.focus then ns.UpdateBlock(ns.blocks.focus) end end
@@ -107,6 +109,8 @@ function handlers.ADDON_LOADED(name)
                 ns.Safe(ns.UpdateColors, fb)
             end
         end
+        local pb = ns.blocks.player
+        if pb and pb.root:IsShown() then ns.Safe(ns.UpdateGlow, pb) end
         local tb = ns.blocks.targettarget
         if tb and tb.root:IsShown() then
             ns.Safe(ns.UpdateColors, tb)
@@ -120,7 +124,8 @@ function handlers.ADDON_LOADED(name)
 
     for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
         "UNIT_DISPLAYPOWER", "UNIT_PORTRAIT_UPDATE", "UNIT_MODEL_CHANGED", "UNIT_LEVEL",
-        "UNIT_NAME_UPDATE", "UNIT_FACTION", "UNIT_FLAGS", "UNIT_AURA" }) do
+        "UNIT_NAME_UPDATE", "UNIT_FACTION", "UNIT_FLAGS", "UNIT_AURA",
+        "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED" }) do
         RegU(e, "player", "target", "pet", "focus")
     end
     RegU("UNIT_PET", "player")
@@ -162,11 +167,13 @@ SlashCmdList["CENTERRESOURCES"] = function(msg)
         for _, line in ipairs(ns.DescribeHappiness()) do ns.Print(line) end
     elseif cmd == "auras" then
         for _, line in ipairs(ns.DescribeAuraState()) do ns.Print(line) end
+    elseif cmd == "predict" then
+        for _, line in ipairs(ns.DescribePrediction()) do ns.Print(line) end
     elseif cmd == "layout" then
         ns.Print("current Edit Mode layout: " .. tostring(ns.layoutKey))
     elseif cmd == "errors" then
         ns.Print(ns.lastError and ("last error: " .. ns.lastError) or "no errors recorded")
     else
-        ns.Print("/cr = settings, /cr unlock, /cr lock, /cr reset, /cr layout, /cr pet, /cr auras, /cr errors")
+        ns.Print("/cr = settings, /cr unlock, /cr lock, /cr reset, /cr layout, /cr pet, /cr auras, /cr predict, /cr errors")
     end
 end

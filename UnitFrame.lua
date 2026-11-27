@@ -35,6 +35,29 @@ local ART = {
     backingPad   = 4,                    -- extra pixels of black around the portrait edge    
 }
 
+-- Combat glow (player frame only): see the rules above ns.UpdateGlow; every transition takes GLOW.fade.
+--   ring_glow.tga is 16px larger than portrait_ring.tga on each axis (272 vs 256 canvas).
+--   bar_glow.tga (272x32) is drawn as an 8px-edge 9-slice around each bar: the corners stay 8x8 real
+--   pixels, the edges stretch along the bar, and the transparent centre is skipped.
+local GLOW = {
+    fade     = 0.15,                       -- seconds to fade in and out
+    color    = { 1.00, 0.00, 0.00 },
+    ringFile = "ring_glow",  ringSize = 272,           -- ring canvas size ART.size = 256
+    barFile  = "bar_glow",   barTexW = 272, barTexH = 32, barEdge = 8,   -- 272x32; visible glow band is 8px on every side, interior transparent
+    units    = { player = true },          -- player frame only
+}
+
+-- Incoming heals and shields (absorbs), drawn as translucent overlays on the health bar.
+--   Incoming heals start where the current health ends (clamped to the missing health).
+--   Shields: shieldStyle "end"      = drawn from the OUTER end of the bar inwards (always visible, even at full health)
+--            shieldStyle "attached" = drawn after health + incoming heals (hidden when health is full)
+local PREDICT = {
+    units       = { player = true, target = true },
+    healColor   = { 1.00, 1.00, 1.00, 0.40 },     -- translucent white
+    shieldColor = { 1.00, 0.97, 0.70, 0.50 },     -- translucent light yellow / white
+    shieldStyle = "end",
+}
+
 -- Faction emblems drawn ON TOP of the coloured Pip.tga disc.
 local PVP_ICONS = {
     Horde    = "Interface\\TargetingFrame\\UI-PVP-Horde",
@@ -57,7 +80,7 @@ local PIP = {
 PIP.discRatio = (PIP.size - 2 * PIP.bgInset) / (PIP.size - 2 * PIP.fitInset)
 
 -- Background colour (r, g, b, a) of every badge except PvP (which is faction-coloured).
-local BADGE_BG = { 0, 0, 0, 0.85 }
+local BADGE_BG = { 0, 0, 0, 1 }     -- fully opaque so nothing shows through a badge
 
 -- Show/hide a badge's background and its border together.
 local function ShowBadge(bg, shown)
@@ -663,9 +686,69 @@ local function CreateBlock(unit)
     root:SetClampedToScreen(true)
     local lvl = root:GetFrameLevel()
 
+    -- combat glow: sits behind everything else on the frame
+    local gf = CreateFrame("Frame", nil, root)
+    gf:SetAllPoints(root)
+    gf:SetFrameLevel(lvl)
+    gf:SetAlpha(0)
+    b.glowFrame = gf
+    b.glowTA, b.glowR, b.glowG, b.glowB = 0, GLOW.color[1], GLOW.color[2], GLOW.color[3]
+    b.glowTR, b.glowTG, b.glowTB = b.glowR, b.glowG, b.glowB
+    b.glowRing = gf:CreateTexture(nil, "BACKGROUND")
+    b.glowRing:SetTexture(ns.TEX .. GLOW.ringFile)
+    b.glowRing:SetVertexColor(unpack(GLOW.color))
+    -- bar glow = 8 slices per bar (TL, T, TR, L, R, BL, B, BR); texcoords come from the 272x32 file
+    local e, tw, th = GLOW.barEdge, GLOW.barTexW, GLOW.barTexH
+    local u1, u2, v1, v2 = e / tw, 1 - e / tw, e / th, 1 - e / th
+    local SLICES = {   -- name, left, right, top, bottom texcoords
+        TL = { 0,  u1, 0,  v1 }, T = { u1, u2, 0,  v1 }, TR = { u2, 1, 0,  v1 },
+        L  = { 0,  u1, v1, v2 },                          R  = { u2, 1, v1, v2 },
+        BL = { 0,  u1, v2, 1  }, B = { u1, u2, v2, 1  }, BR = { u2, 1, v2, 1  },
+    }
+    b.glowBars = {}
+    for i = 1, 2 do
+        local set = {}
+        for name, tc in pairs(SLICES) do
+            local t = gf:CreateTexture(nil, "BACKGROUND")
+            t:SetTexture(ns.TEX .. GLOW.barFile)
+            t:SetTexCoord(tc[1], tc[2], tc[3], tc[4])
+            t:SetVertexColor(unpack(GLOW.color))
+            set[name] = t
+        end
+        b.glowBars[i] = set
+    end
+
     -- bars (not clickable: plain StatusBars take no mouse input)
     b.health = MakeBar(root); b.health:SetFrameLevel(lvl + 1)
     b.power  = MakeBar(root); b.power:SetFrameLevel(lvl + 1)
+
+    -- incoming heal / shield overlays (player and target only). They live in a clipping frame the
+    -- size of the health bar, above the health fill but below the portrait and the health text.
+    if PREDICT.units[unit] then
+        local clip = CreateFrame("Frame", nil, root)
+        clip:SetFrameLevel(lvl + 1)
+        clip:SetClipsChildren(true)
+        local function Overlay(col)
+            local sb = CreateFrame("StatusBar", nil, clip)
+            sb:SetFrameLevel(lvl + 2)
+            sb:SetStatusBarTexture(ns.FLAT)
+            sb:SetStatusBarColor(col[1], col[2], col[3], col[4])
+            sb:SetMinMaxValues(0, 1)
+            sb:SetValue(0)
+            return sb
+        end
+        b.predict = { clip = clip, heal = Overlay(PREDICT.healColor), shield = Overlay(PREDICT.shieldColor) }
+        b.predict.calc = ns.MakePredictionCalculator()
+        -- keep the health text above the overlays
+        local tf = CreateFrame("Frame", nil, root)
+        tf:SetAllPoints(b.health)
+        tf:SetFrameLevel(lvl + 3)
+        b.predict.textFrame = tf
+        if pcall(b.health.text.SetParent, b.health.text, tf) then
+            b.health.text:ClearAllPoints()
+            b.health.text:SetPoint("CENTER", b.health, "CENTER")
+        end
+    end
 
     -- portrait, masked into a circle, above the bars
     local pf = CreateFrame("Frame", nil, root)
@@ -674,6 +757,11 @@ local function CreateBlock(unit)
     b.portraitFrame = pf
 
     -- Every portrait layer is sized in LayoutBlock to the same 256-style canvas, centred on pf.
+    -- fully opaque black disc as wide as the portrait ring: hides glow / bar ends behind the portrait
+    b.solid = pf:CreateTexture(nil, "BACKGROUND", nil, -8)
+    b.solid:SetTexture(ns.TEX .. ART.mask)
+    b.solid:SetVertexColor(0, 0, 0, 1)
+
     b.disk = pf:CreateTexture(nil, "BACKGROUND")           -- dark backdrop behind the portrait
     b.disk:SetTexture(ns.TEX .. ART.mask)
     b.disk:SetVertexColor(unpack(ART.backingColor))
@@ -704,7 +792,8 @@ local function CreateBlock(unit)
         local c = col or BADGE_BG
         local t = icons:CreateTexture(nil, "OVERLAY", nil, 0)
         t:SetTexture(ns.TEX .. PIP.bg)
-        t:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+        t:SetVertexColor(c[1], c[2], c[3], 1)   -- always opaque
+        t:SetAlpha(1)
         t:Hide()
         t.border = icons:CreateTexture(nil, "OVERLAY", nil, 4)
         t.border:SetTexture(ns.TEX .. PIP.border)
@@ -881,6 +970,39 @@ local function ApplyLock(b)
     end
 end
 
+-- Anchor the heal / shield overlays to the health bar. The health bar fills towards its outer end:
+-- reverse fill = it grows to the LEFT, normal fill = it grows to the RIGHT.
+local function LayoutPredict(b, L)
+    local p = b.predict
+    if not p then return end
+    local rev = b.health:GetReverseFill() and true or false
+    local tex = b.health:GetStatusBarTexture()
+    p.clip:ClearAllPoints()
+    p.clip:SetAllPoints(b.health)
+
+    local function AnchorAfter(sb, edgeTex)   -- start where edgeTex (a fill texture) ends
+        sb:ClearAllPoints()
+        sb:SetWidth(L)
+        sb:SetReverseFill(rev)
+        if rev then
+            sb:SetPoint("TOPRIGHT", edgeTex, "TOPLEFT", 0, 0)
+            sb:SetPoint("BOTTOMRIGHT", edgeTex, "BOTTOMLEFT", 0, 0)
+        else
+            sb:SetPoint("TOPLEFT", edgeTex, "TOPRIGHT", 0, 0)
+            sb:SetPoint("BOTTOMLEFT", edgeTex, "BOTTOMRIGHT", 0, 0)
+        end
+    end
+
+    AnchorAfter(p.heal, tex)
+    if PREDICT.shieldStyle == "attached" then
+        AnchorAfter(p.shield, p.heal:GetStatusBarTexture())
+    else
+        p.shield:ClearAllPoints()
+        p.shield:SetAllPoints(b.health)
+        p.shield:SetReverseFill(not rev)      -- fills from the outer end towards the portrait
+    end
+end
+
 local function LayoutBlock(b)
     local c = ns.Cfg(b.unit)
     local g = ns.DB.general
@@ -928,6 +1050,34 @@ local function LayoutBlock(b)
     for _, t in ipairs({ b.portrait, b.portraitMask }) do Fit(t, S * ART.portraitScale) end
     Fit(b.disk, S * ART.portraitScale + 2 * ART.backingPad)   -- a little larger than the portrait, like the bar backdrops
     b.border:SetShown(ART.showBorder)
+    -- opaque disc: as wide as the portrait backdrop and (when shown) the ring / border artwork
+    do
+        local solid = S * ART.portraitScale + 2 * ART.backingPad
+        local inset
+        if g.showRing then inset = ART.ringInset end
+        if ART.showBorder then inset = math.min(inset or ART.borderInset, ART.borderInset) end
+        if inset then solid = math.max(solid, S * (ART.size - 2 * inset) / ART.size) end
+        Fit(b.solid, solid)
+    end
+
+    -- glow artwork: ring glow scales with the ring canvas; bar glow is a 9-slice hugging each bar
+    Fit(b.glowRing, S * GLOW.ringSize / ART.size)
+    b.glowRing:ClearAllPoints()
+    b.glowRing:SetPoint("CENTER", b.portraitFrame, "CENTER", 0, 0)
+    for i, bar in ipairs({ b.health, b.power }) do
+        local s, e = b.glowBars[i], GLOW.barEdge
+        for _, t in pairs(s) do t:ClearAllPoints() end
+        -- corners: fixed e x e squares just outside each bar corner
+        s.TL:SetSize(e, e); s.TL:SetPoint("BOTTOMRIGHT", bar, "TOPLEFT", 0, 0)
+        s.TR:SetSize(e, e); s.TR:SetPoint("BOTTOMLEFT",  bar, "TOPRIGHT", 0, 0)
+        s.BL:SetSize(e, e); s.BL:SetPoint("TOPRIGHT",    bar, "BOTTOMLEFT", 0, 0)
+        s.BR:SetSize(e, e); s.BR:SetPoint("TOPLEFT",     bar, "BOTTOMRIGHT", 0, 0)
+        -- edges: e thick, stretched along the bar side
+        s.T:SetHeight(e); s.T:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, 0); s.T:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", 0, 0)
+        s.B:SetHeight(e); s.B:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0); s.B:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+        s.L:SetWidth(e);  s.L:SetPoint("TOPRIGHT", bar, "TOPLEFT", 0, 0);   s.L:SetPoint("BOTTOMRIGHT", bar, "BOTTOMLEFT", 0, 0)
+        s.R:SetWidth(e);  s.R:SetPoint("TOPLEFT", bar, "TOPRIGHT", 0, 0);   s.R:SetPoint("BOTTOMLEFT", bar, "BOTTOMRIGHT", 0, 0)
+    end
 
     -- icons around the portrait
     b.iconFrame:SetShown(c.showIcons)
@@ -980,6 +1130,7 @@ local function LayoutBlock(b)
     end
 
     LayoutAuras(b, L, overlap, D, not c.mirror)
+    LayoutPredict(b, L)
 
     -- unlock overlay extents
     local ext = L - overlap + 6
@@ -998,6 +1149,7 @@ function ns.UpdateHealth(b)
     if not UnitExists(unit) then
         SetBarValue(b.health, 1, 1)
         b.health.text:SetText("")
+        ns.Safe(ns.UpdatePrediction, b)
         return
     end
 
@@ -1007,6 +1159,85 @@ function ns.UpdateHealth(b)
     -- local pct = GetPercent(UnitHealthPercent, cur, max,
     --     unit, true, CurveConstants and CurveConstants.ScaleTo100)
     SetBarText(b.health.text, cur, max)
+    ns.Safe(ns.UpdatePrediction, b)
+end
+
+------------------------------------------------------------
+-- Incoming heals and shields (Midnight-style heal prediction)
+--   UnitGetDetailedHealPrediction fills a UnitHealPredictionCalculator; its results may be SECRET
+--   values, so they go straight into StatusBar:SetValue (no arithmetic, no comparisons).
+--   Fallback when the calculator is missing: UnitGetIncomingHeals / UnitGetTotalAbsorbs.
+------------------------------------------------------------
+function ns.MakePredictionCalculator()
+    if not (CreateUnitHealPredictionCalculator and UnitGetDetailedHealPrediction) then return nil end
+    local ok, calc = pcall(CreateUnitHealPredictionCalculator)
+    if not ok or not calc then return nil end
+    if Enum then
+        local hm, am = Enum.UnitIncomingHealClampMode, Enum.UnitDamageAbsorbClampMode
+        if hm then pcall(function() calc:SetIncomingHealClampMode(hm.MissingHealth) end) end
+        if am then
+            pcall(function()
+                calc:SetDamageAbsorbClampMode(PREDICT.shieldStyle == "attached" and am.MissingHealth or am.MaximumHealth)
+            end)
+        end
+    end
+    return calc
+end
+
+function ns.UpdatePrediction(b)
+    local p = b and b.predict
+    if not p then return end
+    local unit = b.unit
+    local function Clear()
+        pcall(p.heal.SetValue, p.heal, 0)
+        pcall(p.shield.SetValue, p.shield, 0)
+    end
+    if not UnitExists(unit) then Clear() return end
+
+    local ok = pcall(function()
+        local inc, abs
+        if p.calc then
+            UnitGetDetailedHealPrediction(unit, nil, p.calc)
+            inc = p.calc:GetIncomingHeals()          -- 1st return = all incoming heals
+            abs = p.calc:GetDamageAbsorbs()          -- 1st return = amount
+        else
+            inc = UnitGetIncomingHeals(unit)
+            abs = UnitGetTotalAbsorbs(unit)
+        end
+        local max = UnitHealthMax(unit)
+        SetBarValue(p.heal, inc, max)
+        SetBarValue(p.shield, abs, max)
+    end)
+    if not ok then Clear() end
+end
+
+-- /cr predict : what the heal prediction APIs report on this client
+function ns.DescribePrediction()
+    local out = {}
+    local function Add(s) out[#out + 1] = s end
+    Add("CreateUnitHealPredictionCalculator: " .. tostring(CreateUnitHealPredictionCalculator ~= nil))
+    Add("UnitGetDetailedHealPrediction: " .. tostring(UnitGetDetailedHealPrediction ~= nil))
+    Add("UnitGetIncomingHeals: " .. tostring(UnitGetIncomingHeals ~= nil) .. ", UnitGetTotalAbsorbs: " .. tostring(UnitGetTotalAbsorbs ~= nil))
+    Add("Enum.UnitIncomingHealClampMode: " .. tostring(Enum and Enum.UnitIncomingHealClampMode ~= nil) ..
+        ", Enum.UnitDamageAbsorbClampMode: " .. tostring(Enum and Enum.UnitDamageAbsorbClampMode ~= nil))
+    for _, unit in ipairs({ "player", "target" }) do
+        local b = blocks[unit]
+        if not b or not b.predict then
+            Add(unit .. ": no overlay")
+        else
+            Add(unit .. ": calculator " .. (b.predict.calc and "created" or "NOT available (fallback APIs)") ..
+                ", shield style " .. PREDICT.shieldStyle)
+            if b.predict.calc and UnitExists(unit) then
+                local ok, err = pcall(UnitGetDetailedHealPrediction, unit, nil, b.predict.calc)
+                Add("  UnitGetDetailedHealPrediction: " .. (ok and "ok" or ("ERROR " .. tostring(err))))
+                if ok then
+                    local ok2, secret = pcall(function() return b.predict.calc:HasSecretValues() end)
+                    Add("  HasSecretValues: " .. (ok2 and tostring(secret) or "n/a"))
+                end
+            end
+        end
+    end
+    return out
 end
 
 function ns.UpdatePower(b)
@@ -1033,6 +1264,20 @@ function ns.UpdatePower(b)
     SetBarText(b.power.text, cur, max)
 end
 
+-- Is this unit a pet / minion controlled by a player of the SAME faction as the player (own pet included)?
+-- All comparisons happen inside the pcall, so a secret value just makes this return false.
+local function IsFriendlyPlayerPet(unit)
+    local ok, res = pcall(function()
+        if not UnitExists(unit) or UnitIsPlayer(unit) then return false end
+        if UnitIsUnit(unit, "pet") then return true end
+        if not UnitPlayerControlled(unit) then return false end
+        local mine, theirs = UnitFactionGroup("player"), UnitFactionGroup(unit)
+        if mine and theirs then return mine == theirs end
+        return UnitIsFriend("player", unit) and true or false
+    end)
+    return ok and res == true
+end
+
 function ns.UpdateColors(b)
     local g = ns.DB.general
     local unit = b.unit
@@ -1044,6 +1289,8 @@ function ns.UpdateColors(b)
             local ok, same = pcall(function() return UnitFactionGroup(unit) == UnitFactionGroup("player") end)
             if ok and same == true then r, gg, bb = 0.2, 0.8, 0.2 end
         end
+        -- Pets of same-faction players are green as well.
+        if not r and IsFriendlyPlayerPet(unit) then r, gg, bb = 0.2, 0.8, 0.2 end
         if not r and UnitExists(unit) and UnitSelectionColor then
             local ok, cr, cg, cb = pcall(UnitSelectionColor, unit)
             if ok and Plain(cr) and Plain(cg) and Plain(cb) then r, gg, bb = cr, cg, cb end
@@ -1075,23 +1322,39 @@ end
 -- ---------------------------------------------------------------------------------------------
 -- Level number colours (names are always white)
 --   TARGET, TARGET OF TARGET and FOCUS share the same rules; player and pet levels are white.
---     attackable unit (mob or unfriendly player) ... GetQuestDifficultyColor(level)
+--     attackable unit (mob or unfriendly player) ... a calculated colour (see DIFF table below)
 --     friendly NPC / friendly player ................ white
 --     unattackable, non-friendly NPC ................ UnitSelectionColor (the engine's orange)
 -- ---------------------------------------------------------------------------------------------
 local WHITE = { 1.00, 1.00, 1.00 }
 
+-- Calculated mob difficulty colours (GetCreatureDifficultyColor / GetQuestDifficultyColor disagree
+-- with the client's nameplates, so the thresholds are our own). diff = mob level - player level.
+-- Tune these against the nameplates: every diff >= DIFF.red is red, ... every diff <= DIFF.grey is grey.
+local DIFF = {
+    red    =  5,   -- diff >=  5
+    orange =  3,   -- diff 3..4
+    yellow = -2,   -- diff -2..2
+    grey   = -7,   -- diff <= -7 grey; between yellow and grey is green
+}
+local DIFF_COLORS = {
+    red    = { 1.00, 0.10, 0.10 },
+    orange = { 1.00, 0.50, 0.25 },
+    yellow = { 1.00, 1.00, 0.00 },
+    green  = { 0.25, 0.75, 0.25 },
+    grey   = { 0.50, 0.50, 0.50 },
+}
+
 local function DifficultyColor(unit)
     local lvl, mine = UnitLevel(unit), UnitLevel("player")
     if not (Plain(lvl) and Plain(mine)) then return WHITE end
-    if lvl <= 0 then lvl = mine + 10 end   -- "??" (skull) -> always red
-    if GetQuestDifficultyColor then
-        local c = GetQuestDifficultyColor(lvl)
-        if type(c) == "table" and Plain(c.r) and Plain(c.g) and Plain(c.b) then
-            return { c.r, c.g, c.b }
-        end
-    end
-    return WHITE
+    if lvl <= 0 then return DIFF_COLORS.red end   -- "??" (skull)
+    local d = lvl - mine
+    if d >= DIFF.red then return DIFF_COLORS.red end
+    if d >= DIFF.orange then return DIFF_COLORS.orange end
+    if d >= DIFF.yellow then return DIFF_COLORS.yellow end
+    if d > DIFF.grey then return DIFF_COLORS.green end
+    return DIFF_COLORS.grey
 end
 
 local function PickLevelColor(unit)
@@ -1214,7 +1477,78 @@ function ns.UpdateAlpha()
     end
 end
 
+-- Glow state machine. Target state = (alpha, r, g, b); every change takes GLOW.fade seconds.
+-- Colours blend while visible; when the glow is fully faded out a new colour is applied instantly.
+local function SetGlowColor(b, r, g, bl)
+    b.glowR, b.glowG, b.glowB = r, g, bl
+    b.glowRing:SetVertexColor(r, g, bl)
+    for _, set in ipairs(b.glowBars) do
+        for _, t in pairs(set) do t:SetVertexColor(r, g, bl) end
+    end
+end
+
+local function Approach(cur, tgt, step)
+    if cur < tgt then return math.min(tgt, cur + step) end
+    return math.max(tgt, cur - step)
+end
+
+local function GlowOnUpdate(self, dt)
+    local b = self.block
+    local step = dt / GLOW.fade
+    local a = Approach(self:GetAlpha(), b.glowTA, step)
+    self:SetAlpha(a)
+    local r = Approach(b.glowR, b.glowTR, step)
+    local g = Approach(b.glowG, b.glowTG, step)
+    local bl = Approach(b.glowB, b.glowTB, step)
+    if r ~= b.glowR or g ~= b.glowG or bl ~= b.glowB then SetGlowColor(b, r, g, bl) end
+    if a == b.glowTA and r == b.glowTR and g == b.glowTG and bl == b.glowTB then
+        self:SetScript("OnUpdate", nil)
+    end
+end
+
+-- Threat colour for status 1..3 (GetThreatStatusColor, with the stock colours as a fallback)
+local THREAT_FALLBACK = { [1] = { 1, 1, 0.47 }, [2] = { 1, 0.6, 0 }, [3] = { 1, 0, 0 } }
+local function ThreatColor(status)
+    if GetThreatStatusColor then
+        local ok, r, g, bl = pcall(GetThreatStatusColor, status)
+        if ok and Plain(r) and Plain(g) and Plain(bl) then return r, g, bl end
+    end
+    local c = THREAT_FALLBACK[status]
+    return c[1], c[2], c[3]
+end
+
+local function SafeTrue(fn, ...)
+    local ok, v = pcall(fn, ...)
+    if not ok or (issecretvalue and issecretvalue(v)) then return false end
+    return v == true
+end
+
+-- Glow rules (player frame):
+--   UnitThreatSituation("player") = 1/2/3 ............... GetThreatStatusColor(status)
+--   status 0 or nil (or unreadable) AND still in combat .. combat red
+--   anything else (0/nil and out of combat) .............. no glow
+function ns.UpdateGlow(b)
+    if not GLOW.units[b.unit] then return end
+    local ta, r, g, bl = 0, b.glowTR or GLOW.color[1], b.glowTG or GLOW.color[2], b.glowTB or GLOW.color[3]
+    if ns.DB.general.locked then
+        local ok, status = pcall(UnitThreatSituation, "player")
+        if ok and Plain(status) and status >= 1 and status <= 3 then
+            ta = 1
+            r, g, bl = ThreatColor(status)
+        elseif SafeTrue(UnitAffectingCombat, "player") then
+            ta, r, g, bl = 1, GLOW.color[1], GLOW.color[2], GLOW.color[3]
+        end
+    end
+    if ta == b.glowTA and r == b.glowTR and g == b.glowTG and bl == b.glowTB then return end
+    b.glowTA, b.glowTR, b.glowTG, b.glowTB = ta, r, g, bl
+    local gf = b.glowFrame
+    gf.block = b
+    if gf:GetAlpha() == 0 and ta > 0 then SetGlowColor(b, r, g, bl) end   -- invisible: snap colour
+    gf:SetScript("OnUpdate", GlowOnUpdate)
+end
+
 function ns.UpdateBlock(b)
+    ns.Safe(ns.UpdateGlow, b)
     ns.Safe(ns.UpdateColors, b)
     ns.Safe(ns.UpdateHealth, b)
     ns.Safe(ns.UpdatePower, b)

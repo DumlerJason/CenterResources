@@ -6,7 +6,7 @@ Purpose of this file: if you start a NEW chat with Claude, upload the zip and sa
 needed to continue should be here: what the addon is, how it is built, what the user
 wants, what has been verified in game, and what is still open.
 
-Current version: 2.5.7  (see CenterResources.toc)
+Current version: 2.7.1  (see CenterResources.toc)
 BUILD NOTE (2.5.3): the LIVE aura path is now the engine's native AuraContainer (ns.UpdateAuras
 always uses it; the old icon-by-icon code is dead). Aura timer text is the engine's own Cooldown
 countdown, formatted by a custom NumericRuleFormatter (section 5, "Aura timer text"). A
@@ -201,17 +201,46 @@ Auras (buffs/debuffs) - NATIVE AURACONTAINER PATH (live in 2.5.3)
 Level number, name and health colours (v2.5.6 rules; UpdateInfo, PickLevelColor, UpdateColors)
   - NAMES: always white on every frame.
   - LEVEL: player and pet always white. TARGET, TARGET OF TARGET and FOCUS share one rule set:
-    UnitCanAttack("player", unit) (mob or unfriendly player) -> GetQuestDifficultyColor(level)
+    UnitCanAttack("player", unit) (mob or unfriendly player) -> calculated from level difference (DIFF table; GetCreatureDifficultyColor was unreliable)
     ("??" level -> treated as player level + 10 = red); friendly player or UnitIsFriend NPC -> white;
     otherwise (unattackable, non-friendly NPC) -> UnitSelectionColor (the engine's orange).
     ASSUMPTION: players that cannot be attacked (e.g. unflagged other-faction) count as friendly -> white.
     Any secret/restricted value -> white (SafeColor pcall).
   - HEALTH BAR: target, targettarget, focus -> player-green if the unit is a same-faction player, else UnitSelectionColor(unit) (pcall'd, green fallback).
+    2.7.0: PETS (and other player-controlled non-player units) of the SAME faction are green too
+    (IsFriendlyPlayerPet in UnitFrame.lua: own pet via UnitIsUnit(unit,"pet"); else UnitPlayerControlled +
+    UnitFactionGroup equal to the player's, falling back to UnitIsFriend when a faction is nil). Everything
+    inside one pcall, so a secret value simply falls through to UnitSelectionColor. Applies to target, ToT, focus.
     Player and pet -> green (0.2,0.8,0.2). The old General option "Health bar colour" (green/class)
     was REMOVED from the options panel (db key general.healthColor is now unused). The portrait
     ring still uses class/reaction colour (UnitColor) when showRing is on.
   - Refresh: the 0.1s ticker in Main.lua refreshes UpdateInfo + UpdateColors for target and focus
     (and the full set for target of target). UNVERIFIED in game.
+
+Incoming heals and shields (v2.7.0; PLAYER and TARGET frames only; UNTESTED in game)
+  - PREDICT table at the top of UnitFrame.lua: units = {player, target}, healColor translucent white
+    (1,1,1,0.40), shieldColor translucent light yellow (1,0.97,0.70,0.50), shieldStyle "end" | "attached".
+    No options-panel controls and no saved variables for these yet (constants only).
+  - Widgets (CreateBlock, b.predict): clip frame (SetClipsChildren, same size as the health bar, level +1)
+    holding two plain StatusBars (heal, shield; texture ns.FLAT, translucent colour). A text frame (level +3)
+    takes over b.health.text so the numbers stay above the overlays. Portrait frame (+3) is still above.
+  - Layout (LayoutPredict, called at the end of LayoutBlock): the heal bar is anchored to the health bar's
+    STATUS BAR TEXTURE edge (right edge for normal fill, left edge for reverse fill), width = bar length, same fill
+    direction as health; so it starts exactly where health ends and follows the smoothing animation.
+    Shield "end": SetAllPoints(health), OPPOSITE fill direction = drawn from the outer end of the bar inwards, so it is
+    visible even at full health. Shield "attached": anchored after the heal bar's fill (hidden at full health).
+  - Data (ns.UpdatePrediction): Midnight calculator: CreateUnitHealPredictionCalculator (one per block, made by
+    ns.MakePredictionCalculator; incoming-heal clamp = MissingHealth; damage-absorb clamp = MaximumHealth for "end",
+    MissingHealth for "attached"), UnitGetDetailedHealPrediction(unit, nil, calc), calc:GetIncomingHeals() (1st return =
+    all heals), calc:GetDamageAbsorbs() (1st return = amount), values go straight into SetBarValue (secret-safe).
+    Fallback if the calculator API is missing: UnitGetIncomingHeals / UnitGetTotalAbsorbs.
+    Called from ns.UpdateHealth (so UNIT_HEALTH, UNIT_MAXHEALTH, target change, RefreshAll all cover it) and from the
+    events UNIT_HEAL_PREDICTION and UNIT_ABSORB_AMOUNT_CHANGED (Main.lua, registered with RegU for player/target/pet/focus).
+  - /cr predict prints which APIs exist, whether the calculator was created, whether the call works and HasSecretValues.
+  - API source: warcraft.wiki.gg ScriptObject UnitHealPredictionCalculator (listed for Forever 1.60.1).
+    Enum.UnitIncomingHealClampMode: 0 MissingHealth, 1 MaximumHealth. Enum.UnitDamageAbsorbClampMode: 0 MissingHealth,
+    1 MissingHealthWithoutIncomingHeals, 2 MaximumHealth. UnitGetDetailedHealPrediction is flagged AllowedWhenUntainted
+    on the wiki; if addons turn out not to be allowed to call it, /cr predict will show an ERROR and the fallback APIs are the plan B.
 
 Hide Blizzard buff/debuff bars (General tab, GLOBAL option general.hideAuraBars, default off)
   - ns.ApplyAuraBars (called from ns.RefreshAll) hides BuffFrame, DebuffFrame and
@@ -403,6 +432,8 @@ Later:
   * Aura whitelist/blacklist (design undecided: per class / per character / global; by spell
     name or spell ID; note some aura fields are secret in combat, so matching may be limited).
   * Optional: show auras Blizzard hides; aura sorting/priorities; dispellable highlight.
+  * Heal/shield overlays: options-panel toggles/colours (per layout, like other per-frame options), possibly also for
+    ToT/focus/pet; an over-shield marker at the bar end for the "attached" style; heal-absorb (negative) display.
   * Optional: make General options per layout too (currently global by design choice).
   * Optional: inverted-mask cutout for non-round portraits; casting bars; heal prediction;
     Edit Mode drag integration (user said not needed for now).
@@ -421,7 +452,40 @@ Later:
 2.5.1 Pet happiness now reads C_PetInfo.GetPetHappiness (the classic global does not exist on Forever).
 2.6.0 (REMOVED) Engine-drawn auras via AuraContainer: auras stopped displaying on all custom frames.
 2.5.2 = 2.5.1 code with 2.6.0 removed (pet happiness working, original auras working).
-2.5.7 THIS BUILD = 2.5.6 + same-faction players get the player-green health bar on target/ToT/focus.
+2.7.0 THIS BUILD = 2.6.6 + (1) health bar is green for pets of same-faction players (target/ToT/focus),
+      otherwise UnitSelectionColor as before; (2) incoming heals (translucent white) and (3) shields (translucent
+      light yellow) on the player and target frames (see "Incoming heals and shields" in section 5). UNTESTED in game.
+2.7.1 = 2.7.0 + NEW glow rules: UnitThreatSituation("player") 1-3 -> GetThreatStatusColor; nil/0 (or unreadable) while
+      UnitAffectingCombat -> combat red; otherwise none. "Targeted by hostile" scan (nameplates etc.) REMOVED. UNTESTED.
+2.6.6 = 2.6.5 + glow rules (SUPERSEDED by 2.7.1): not in combat = none; in combat and targeted by a hostile unit = red;
+      in combat and not targeted = GetThreatStatusColor(UnitThreatSituation("player")) for status 1-3 (nil/0 = none).
+      Alpha and colour blend toward the target state over GLOW.fade (0.15s); a new colour is applied instantly if
+      the glow is fully faded out. State: b.glowTA/TR/TG/TB (target), b.glowR/G/B (current). UNTESTED.
+2.6.5 = 2.6.4 + bar glow is a manual 9-slice (8 textures per bar, centre skipped): bar_glow.tga is 272x32
+      with an 8px visible band, interior transparent; corners are fixed 8x8 px just outside the bar corners, edges
+      stretch along the bar sides. Glow band is therefore always bar +8px on every side regardless of bar size
+      (previously the whole texture was stretched). GLOW.barEdge/barTexW/barTexH. Bar itself NOT sliced (decided).
+2.6.4 = 2.6.3 + b.solid: fully opaque black disc (portrait_mask texture, BACKGROUND sublevel -8 on the
+      portrait frame, above the glow and bars) as wide as the portrait backdrop / ring (/ border if shown);
+      badge ("pip") backgrounds are now always opaque (BADGE_BG alpha 1 and SetAlpha(1)); bar_glow.tga is now
+      272x32 (GLOW.barGlowW/H vs Bar.tga 256x16) so bar glow is L*272/256 wide, H*2 tall, centred on each bar.
+2.6.3 = 2.6.2 + level colours for attackable units are CALCULATED (DIFF table in UnitFrame.lua):
+      diff=mob-player: >=5 red, 3-4 orange, -2..2 yellow, green, <=-6 grey. Reason: GetCreatureDifficultyColor
+      returned yellow for a level 18 mob at player 21 while the client nameplate showed green; at player 24 a
+      level 18 mob was grey on the nameplate. Data points so far: diff -3 = green, diff -6 = grey. Grey boundary
+      may depend on player level; adjust DIFF.grey after more nameplate comparisons.
+2.6.2 = 2.6.1 + FIX: CenterResources.toc had been emptied (0 bytes) by a bad edit in 2.5.8-2.6.1, so the addon would not load; restored.
+2.6.1 = 2.6.0 but the glow is PLAYER FRAME ONLY: shown when the player is in combat AND a hostile
+      unit is targeting the player (target/focus/nameplate1-40 "...target" is the player); fades out when
+      either stops. Needs enemy nameplates enabled to see mobs other than target/focus. UNTESTED.
+      UpdateGlow runs from the 0.1s ticker. No glow on any other frame.
+2.6.0 = 2.5.8 + combat glow (UNTESTED). Textures ring_glow.tga (272x272, ring canvas +16) and
+      bar_glow.tga (256x32, Bar.tga is 256x16) are supplied by the user, not in the zip. GLOW table at top of
+      UnitFrame.lua: fade 0.15s, red, units={player=true}. glowFrame (level = root level, behind bars and
+      portrait) holds glowRing + 2 glowBars; ns.UpdateGlow(b) fades alpha on UnitAffectingCombat(unit)
+      (only while frames are locked); called from UpdateBlock and the 0.1s ticker (target, focus).
+2.5.8 = 2.5.7 + level colour uses GetCreatureDifficultyColor (fallback GetQuestDifficultyColor); quest function gave wrong grey/green for mobs.
+2.5.7 = 2.5.6 + same-faction players get the player-green health bar on target/ToT/focus.
 2.5.6 = 2.5.5 + names always white; level colours via GetQuestDifficultyColor/UnitSelectionColor
       for target/ToT/focus; health bars: UnitSelectionColor (target/ToT/focus), green (player/pet).
 2.5.5 = 2.5.4 + reworked level/name colour rules (see "Level number and name colours").

@@ -26,7 +26,8 @@
         "RAID_CLASS_COLORS",
         "GenerateClosure",
         "AnchorUtil",
-        "GetQuestDifficultyColor"
+        "GetQuestDifficultyColor",
+        "GetCreatureDifficultyColor"
     ],
     "Lua.type.weakUnionCheck": true
 }
